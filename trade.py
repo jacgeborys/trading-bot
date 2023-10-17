@@ -23,7 +23,7 @@ def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
         "cmd": cmd_value,
         "customComment": "Trading based on MA crossover",  # An example custom comment
         "expiration": 0,  # If you're not using pending orders, you can set this to 0
-        "offset": offset,
+        # "offset": offset,
         "order": 0,  # 0 for opening new trades
         "price": 1,  # Assuming market order, otherwise provide a price
         "sl": sl_value,
