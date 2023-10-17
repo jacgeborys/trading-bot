@@ -1,0 +1,9 @@
+# IDE settings
+.idea/
+# Test cache
+.pytest_cache/
+# Python byte code
+__pycache__/
+# Custom folders (if needed)
+archive/
+excel/
