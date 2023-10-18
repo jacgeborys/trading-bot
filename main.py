@@ -1,10 +1,7 @@
 from xAPIConnector import *
 import time
 import os
-import numpy as np
-import pandas as pd
 import math
-import csv
 import datetime
 
 from fetch_data import get_last_period_prices
@@ -15,33 +12,36 @@ from trade import open_trade, close_all_trades
 
 # Global Variables
 current_position = None
+trade_opened = False
+trade_start_time = None
+
+# Configuration parameters
 crossover_threshold = 0.05
 atr_threshold = 2
+
+# State variables
 prev_ema_12 = None
 prev_ema_26 = None
 prev_signal = None
 prev_histogram = None
-trade_opened = False
-trade_start_time = None
-
+#####################################################################################################################
 def buy_and_sell(symbol="US500", volume=0.05, wait_time=60, retry_attempts=3):
+    # Global Variables
     global current_position
-    global crossover_threshold
-    global atr_threshold
     global trade_opened
     global trade_start_time
+    global crossover_threshold
+    global atr_threshold
 
     userId = 15237562
     password = os.environ.get("XTB_PASSWORD")
-
     client, ssid = login_to_xtb(userId, password)
     if not client or not ssid:
         return
 
-    prev_macd = None
-    prev_signal = None
-    prev_histogram = None
-    prev_prev_histogram = None
+    prev_macd, prev_signal, prev_histogram = None, None, None
+    crossover_threshold, atr_threshold = 0.05, 2
+    attempts, wait_time, retry_attempts = 0, 60, 3
 
     attempts = 0
 
@@ -49,11 +49,13 @@ def buy_and_sell(symbol="US500", volume=0.05, wait_time=60, retry_attempts=3):
         try:
             # Fetch and prepare data
             prices, latest_open, latest_close, highs, lows, volume_data = get_last_period_prices(client, symbol, period=5)
-            vwap = calculate_vwap(prices[-60:], volume_data[-60:])
-            vwap_distance = latest_close - vwap
-            macd, signal = calculate_macd(prices)
+            macd, signal, histogram = calculate_macd(prices)
             atr_value = calculate_atr(highs, lows, prices)
-            histogram = macd - signal
+            vwap = calculate_vwap(prices[-60:], volume_data[-60:])
+
+            log_data = [datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), latest_open, latest_close,
+                        macd, signal, vwap, atr_value, current_position]
+            write_to_csv(log_data)
 
             print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
             print(f"Opening Price: {latest_open}")
@@ -64,43 +66,36 @@ def buy_and_sell(symbol="US500", volume=0.05, wait_time=60, retry_attempts=3):
             print(f"VWAP: {vwap}")
             print("-" * 40)
 
-            log_data = [datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), latest_open, latest_close,
-                        macd, signal, vwap, atr_value, current_position]
-            write_to_csv(log_data)
-
             # MACD-based logic
             if prev_macd is not None and prev_signal is not None and prev_histogram is not None:
-
                 if prev_macd < prev_signal and macd > signal and abs(macd - signal) > crossover_threshold and atr_value > atr_threshold:
-                    if macd<0 and signal<0:
 
-                        print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                        if current_position == "short":
-                            print("Closing short position.")
-                            close_all_trades(client)
-                        tp_value = latest_close + 2 * atr_value  # Added ATR value for take profit
-                        tp_value = round(tp_value, 1)
-                        offset = math.ceil(1 * atr_value + 0.9)
-                        sl_value = latest_close - 3 * atr_value # Just a large value in order to launch a trailing offset
-                        open_trade(client, symbol, volume, offset, tp_value, sl_value)
-                        print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
-                        write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
-                                      None, None, None, None, "Trade opened", "Long", tp_value, offset])
-                        current_position = "long"
+                    print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+                    if current_position == "short":
+                        print("Closing short position.")
+                        close_all_trades(client)
+                    tp_value = round((latest_close + 1 * atr_value), 1)  # Added ATR value for take profit
+                    offset = math.ceil(1 * atr_value + 0.9)
+                    sl_value = latest_close - 2 * atr_value # Just a large value in order to launch a trailing offset
+
+                    open_trade(client, symbol, volume, offset, tp_value, sl_value)
+                    print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
+                    write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
+                                  None, None, None, None, "Trade opened", "Long", tp_value, offset])
+                    current_position = "long"
                 elif prev_macd > prev_signal and macd < signal and abs(macd - signal) > crossover_threshold and atr_value > atr_threshold:
-                    if macd>0 and signal>0:
-                        print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                        if current_position == "long":
-                            print("Closing long position.")
-                            close_all_trades(client)
-                        tp_value = latest_close - 2 * atr_value  # Subtract ATR value for take profit
-                        offset = math.ceil(1 * atr_value + 0.9)
-                        sl_value = latest_close + 3 * atr_value # Just a large value in order to launch a trailing offset
-                        open_trade(client, symbol, -volume, offset, tp_value, sl_value)
-                        print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
-                        write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
-                                      None, None, None, None, "Trade opened", "Long", tp_value, offset])
-                        current_position = "short"
+                    print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+                    if current_position == "long":
+                        print("Closing long position.")
+                        close_all_trades(client)
+                    tp_value = latest_close - 1 * atr_value  # Subtract ATR value for take profit
+                    offset = math.ceil(1 * atr_value + 0.9)
+                    sl_value = latest_close + 2 * atr_value # Just a large value in order to launch a trailing offset
+                    open_trade(client, symbol, -volume, offset, tp_value, sl_value)
+                    print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
+                    write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
+                                  None, None, None, None, "Trade opened", "Long", tp_value, offset])
+                    current_position = "short"
 
                 if abs(histogram) < abs(prev_histogram):
                     if abs(macd - signal) > 2:  # New condition

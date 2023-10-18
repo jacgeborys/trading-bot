@@ -43,8 +43,10 @@ def calculate_macd(prices):
     # Signal Line
     signal_line = macd_line.ewm(span=9, adjust=False).mean()
 
+    histogram = macd_line.iloc[-1] - signal_line.iloc[-1]
+
     # Return the last values
-    return macd_line.iloc[-1], signal_line.iloc[-1]
+    return macd_line.iloc[-1], signal_line.iloc[-1], histogram
 
 def calculate_vwap(prices, volume_data):
     if len(prices) != len(volume_data):
