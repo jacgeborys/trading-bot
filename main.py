@@ -10,28 +10,17 @@ from indicators import calculate_macd, calculate_atr, calculate_ema, calculate_v
 from login import login_to_xtb
 from trade import open_trade, close_all_trades
 
-# Global Variables
-current_position = None
-trade_opened = False
-trade_start_time = None
-
-# Configuration parameters
-crossover_threshold = 0.05
-atr_threshold = 2
-
 # State variables
 prev_ema_12 = None
 prev_ema_26 = None
 prev_signal = None
 prev_histogram = None
-#####################################################################################################################
-def buy_and_sell(symbol="US500", volume=0.05, wait_time=60, retry_attempts=3):
+
+def buy_and_sell(symbol="US500", volume=0.05):
     # Global Variables
-    global current_position
-    global trade_opened
-    global trade_start_time
-    global crossover_threshold
-    global atr_threshold
+    current_position = None
+    trade_opened = False
+    trade_start_time = None
 
     userId = 15237562
     password = os.environ.get("XTB_PASSWORD")
