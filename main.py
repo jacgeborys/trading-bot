@@ -65,7 +65,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                         close_all_trades(client)
                     tp_value = round((latest_close + 1 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close - 2 * atr_value # Just a large value in order to launch a trailing offset
+                    sl_value = latest_close - 2 * atr_value
 
                     open_trade(client, symbol, volume, offset, tp_value, sl_value)
                     print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
@@ -73,13 +73,15 @@ def buy_and_sell(symbol="US500", volume=0.05):
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
                     current_position = "long"
                 elif prev_macd > prev_signal and macd < signal and abs(macd - signal) > crossover_threshold and atr_value > atr_threshold:
+
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if current_position == "long":
                         print("Closing long position.")
                         close_all_trades(client)
-                    tp_value = latest_close - 1 * atr_value  # Subtract ATR value for take profit
+                    tp_value = round((latest_close - 1 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close + 2 * atr_value # Just a large value in order to launch a trailing offset
+                    sl_value = latest_close + 2 * atr_value
+
                     open_trade(client, symbol, -volume, offset, tp_value, sl_value)
                     print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
