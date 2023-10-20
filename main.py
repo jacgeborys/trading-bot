@@ -37,7 +37,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
     while True:
         try:
             # Fetch and prepare data
-            prices, latest_open, latest_close, highs, lows, volume_data = get_last_period_prices(client, symbol, period=5)
+            prices, latest_open, latest_close, highs, lows, volume_data = get_last_period_prices(client, symbol, period=1)
             macd, signal, histogram = calculate_macd(prices)
             atr_value = calculate_atr(highs, lows, prices)
             vwap = calculate_vwap(prices[-60:], volume_data[-60:])
