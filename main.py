@@ -65,7 +65,8 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 2 * atr_value
 
-                    open_trade(client, symbol, volume, offset, tp_value, sl_value)
+                    trade_result = open_trade(client, symbol, volume, offset, tp_value, sl_value)
+                    trade_start_time = trade_result["trade_time"]
                     print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
@@ -80,7 +81,8 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 2 * atr_value
 
-                    open_trade(client, symbol, -volume, offset, tp_value, sl_value)
+                    trade_result = open_trade(client, symbol, -volume, offset, tp_value, sl_value)
+                    trade_start_time = trade_result["trade_time"]
                     print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])

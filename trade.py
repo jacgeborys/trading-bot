@@ -9,6 +9,8 @@ import datetime
 
 def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
 
+    trade_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     offset = int(10 * offset)
     tp_value = round(tp_value, 1)
     sl_value = round(sl_value, 1)
@@ -41,7 +43,10 @@ def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
     }
 
     response = client.execute(request)
-    return response
+    return {
+        "trade_time": trade_time,
+        "response": response
+        }
 
 def close_all_trades(client):
     # Get all open trades
