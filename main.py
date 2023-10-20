@@ -11,12 +11,10 @@ from login import login_to_xtb
 from trade import open_trade, close_all_trades
 
 # State variables
-prev_ema_12 = None
-prev_ema_26 = None
 prev_signal = None
 prev_histogram = None
 
-def buy_and_sell(symbol="US500", volume=0.05):
+def buy_and_sell(symbol="US500", volume=0.08):
     # Global Variables
     current_position = None
     trade_opened = False

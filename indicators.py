@@ -33,13 +33,10 @@ def calculate_macd(prices):
 
     # Short-term EMA
     ema_12 = calculate_ema(prices, 12)
-
     # Long-term EMA
     ema_26 = calculate_ema(prices, 26)
-
     # MACD Line
     macd_line = ema_12 - ema_26
-
     # Signal Line
     signal_line = macd_line.ewm(span=9, adjust=False).mean()
 
@@ -55,3 +52,10 @@ def calculate_vwap(prices, volume_data):
     # Assuming prices and volume_data are aligned by index (i.e., same time period)
     vwap = np.sum(np.array(prices) * np.array(volume_data)) / np.sum(volume_data)
     return vwap
+
+def calculate_bollinger_bands(prices, window_size=20, num_std_dev=2):
+    rolling_mean = np.mean(prices[-window_size:])
+    rolling_std = np.std(prices[-window_size:])
+    upper_band = rolling_mean + (rolling_std * num_std_dev)
+    lower_band = rolling_mean - (rolling_std * num_std_dev)
+    return upper_band, lower_band
