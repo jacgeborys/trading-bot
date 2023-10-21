@@ -8,6 +8,7 @@ import csv
 import datetime
 
 def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
+    global trade_opened
 
     trade_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 

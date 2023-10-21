@@ -14,20 +14,20 @@ from trade import open_trade, close_all_trades
 prev_signal = None
 prev_histogram = None
 
-def buy_and_sell(symbol="US500", volume=0.08):
+def buy_and_sell(symbol="US500", volume=0.05):
     # Global Variables
     current_position = None
     trade_opened = False
     trade_start_time = None
 
-    userId = 15237562
+    userId = os.environ.get("XTB_USERID")
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)
     if not client or not ssid:
         return
 
     prev_macd, prev_signal, prev_histogram = None, None, None
-    crossover_threshold, atr_threshold = 0.05, 2
+    crossover_threshold, atr_threshold = 0.08, 2
     attempts, wait_time, retry_attempts = 0, 60, 3
 
     attempts = 0
@@ -49,6 +49,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
             print(f"Closing Price: {latest_close}")
             print(f"MACD: {macd}")
             print(f"Signal Line: {signal}")
+            print((f"Histogram: {histogram}, previous histogram: {prev_histogram}"))
             print(f"ATR: {atr_value}")
             print(f"VWAP: {vwap}")
             print("-" * 40)
@@ -66,8 +67,10 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     sl_value = latest_close - 2 * atr_value
 
                     trade_result = open_trade(client, symbol, volume, offset, tp_value, sl_value)
-                    trade_start_time = trade_result["trade_time"]
+                    trade_start_time = time.time()
+                    trade_opened = True
                     print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
+                    print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
                     current_position = "long"
@@ -82,8 +85,10 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     sl_value = latest_close + 2 * atr_value
 
                     trade_result = open_trade(client, symbol, -volume, offset, tp_value, sl_value)
-                    trade_start_time = trade_result["trade_time"]
+                    trade_start_time = time.time()
+                    trade_opened = True
                     print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
+                    print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
                     current_position = "short"
@@ -102,7 +107,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
             prev_histogram = histogram
 
             if trade_opened:
-                if time.time() - trade_start_time < 1200:  # 1200 seconds = 4 * 5 minutes
+                if time.time() - trade_start_time < 1200:  # 1200 seconds = 20 * 1 minutes
                     if current_position == "long" and histogram < prev_histogram:
                         print("Converging histogram detected in long position. Closing trade.")
                         close_all_trades(client)
@@ -113,8 +118,6 @@ def buy_and_sell(symbol="US500", volume=0.08):
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
-                else:
-                    trade_opened = False  # Reset the flag after 3 minutes
 
             # Reset attempts counter after successful connection
             attempts = 0
