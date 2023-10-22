@@ -8,7 +8,7 @@ import csv
 import datetime
 
 def get_last_period_prices(client, symbol, period):
-    period_in_seconds = 360 * period * 60 * 1000  # Adjusted for variable periods
+    period_in_seconds = 600 * period * 60 * 1000  # Adjusted for variable periods
     now = int(time.time() * 1000)
     from_timestamp = now - period_in_seconds
 

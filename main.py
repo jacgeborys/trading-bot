@@ -6,7 +6,7 @@ import datetime
 
 from fetch_data import get_last_period_prices
 from file_ops import write_to_csv
-from indicators import calculate_macd, calculate_atr, calculate_ema, calculate_vwap
+from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap
 from login import login_to_xtb
 from trade import open_trade, close_all_trades
 
@@ -94,7 +94,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     current_position = "short"
 
                 if abs(histogram) < abs(prev_histogram):
-                    if abs(macd - signal) > 2:  # New condition
+                    if abs(macd - signal) > 2:
                         print(
                             f"MACD histogram is narrowing at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}. Closing all positions.")
                         close_all_trades(client)
@@ -107,14 +107,16 @@ def buy_and_sell(symbol="US500", volume=0.05):
             prev_histogram = histogram
 
             if trade_opened:
-                if time.time() - trade_start_time < 1200:  # 1200 seconds = 20 * 1 minutes
+                if time.time() - trade_start_time < 300:  # 300 seconds = 5 * 1 minutes
                     if current_position == "long" and histogram < prev_histogram:
-                        print("Converging histogram detected in long position. Closing trade.")
+                        print(
+                            "Converging histogram detected in long position within 5 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
                     elif current_position == "short" and histogram > prev_histogram:
-                        print("Converging histogram detected in short position. Closing trade.")
+                        print(
+                            "Converging histogram detected in short position within 5 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
