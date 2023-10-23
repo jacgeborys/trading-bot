@@ -73,8 +73,8 @@ def close_all_trades(client):
                     "cmd": 0,  # Assuming you are buying to close (adjust as per your need)
                     "type": 2,  # Close order
                     "price": close_price,
-                    # "sl": 0.0,
-                    # "tp": 0.0,
+                    "sl": 0.0,
+                    "tp": 0.0,
                     "symbol": symbol,
                     "volume": volume,
                     "order": order,

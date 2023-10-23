@@ -27,7 +27,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
         return
 
     prev_macd, prev_signal, prev_histogram = None, None, None
-    crossover_threshold, atr_threshold = 0.2, 1
+    crossover_threshold, atr_threshold = 0.15, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
 
     attempts = 0
@@ -75,7 +75,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
                     current_position = "long"
-                elif prev_macd > prev_signal and macd < signal and abs(macd - signal) > crossover_threshold and atr_value > atr_threshold:
+                elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
 
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if current_position == "long":
@@ -91,7 +91,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
-                                  None, None, None, None, "Trade opened", "Long", tp_value, offset])
+                                  None, None, None, None, "Trade opened", "Short", tp_value, offset])
                     current_position = "short"
 
             prev_macd = macd
@@ -100,18 +100,22 @@ def buy_and_sell(symbol="US500", volume=0.05):
 
             if trade_opened:
                 if time.time() - trade_start_time < 1200:  #1200 seconds = 20 * 1 minutes
-                    if current_position == "long" and histogram < prev_histogram:
+                    time_passed = time.time() - trade_start_time
+                    print(f"Time passed from trade opening: {time_passed}")
+                    if current_position == "long" and abs(histogram) < abs(prev_histogram):
                         print(
                             "Converging histogram detected in long position within 20 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
-                    elif current_position == "short" and histogram > prev_histogram:
+                    elif current_position == "short" and abs(histogram) > abs(prev_histogram):
                         print(
                             "Converging histogram detected in short position within 20 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
+                    else:
+                        print(f"Histogram is still growing")
 
             # Reset attempts counter after successful connection
             attempts = 0

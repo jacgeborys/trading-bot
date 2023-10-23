@@ -16,7 +16,7 @@ def write_to_csv(row, filepath='C:\\Users\\Asus\\OneDrive\\Pulpit\\Rozne\\Python
 
         # If the file does not exist, write the header row first
         if not file_exists:
-            writer.writerow(['Timestamp', '1min_Open', '1min_Close', '5min_MACD', '5min_Signal',
+            writer.writerow(['Timestamp', '1min_Open', '1min_Close', '1min_MACD', '1min_Signal',
                              'VWAP', 'ATR', 'Position', 'Event', 'Direction', 'TP', 'Offset'])
 
         # Write the actual row
