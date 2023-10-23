@@ -102,15 +102,9 @@ def buy_and_sell(symbol="US500", volume=0.05):
                 if time.time() - trade_start_time < 1200:  #1200 seconds = 20 * 1 minutes
                     time_passed = time.time() - trade_start_time
                     print(f"Time passed from trade opening: {time_passed}")
-                    if current_position == "long" and abs(histogram) < abs(prev_histogram):
+                    if abs(histogram) < abs(prev_histogram):
                         print(
-                            "Converging histogram detected in long position within 20 minutes. Closing trade due to potential false signal.")
-                        close_all_trades(client)
-                        current_position = None
-                        trade_opened = False  # Reset the flag
-                    elif current_position == "short" and abs(histogram) > abs(prev_histogram):
-                        print(
-                            "Converging histogram detected in short position within 20 minutes. Closing trade due to potential false signal.")
+                            "Converging histogram detected within 20 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
