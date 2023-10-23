@@ -93,15 +93,6 @@ def buy_and_sell(symbol="US500", volume=0.05):
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
                     current_position = "short"
 
-                if abs(histogram) < abs(prev_histogram):
-                    if abs(macd - signal) > 2:
-                        print(
-                            f"MACD histogram is narrowing at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}. Closing all positions.")
-                        close_all_trades(client)
-                        current_position = None  # Reset current position
-                    else:
-                        print(f"MACD - Signal is less than 1. Not closing the position yet.")
-
             prev_macd = macd
             prev_signal = signal
             prev_histogram = histogram
@@ -110,13 +101,13 @@ def buy_and_sell(symbol="US500", volume=0.05):
                 if time.time() - trade_start_time < 480:  # 300 seconds = 5 * 1 minutes
                     if current_position == "long" and histogram < prev_histogram:
                         print(
-                            "Converging histogram detected in long position within 5 minutes. Closing trade due to potential false signal.")
+                            "Converging histogram detected in long position within 8 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
                     elif current_position == "short" and histogram > prev_histogram:
                         print(
-                            "Converging histogram detected in short position within 5 minutes. Closing trade due to potential false signal.")
+                            "Converging histogram detected in short position within 8 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
