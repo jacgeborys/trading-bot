@@ -27,8 +27,8 @@ def buy_and_sell(symbol="US500", volume=0.05):
         return
 
     prev_macd, prev_signal, prev_histogram = None, None, None
-    crossover_threshold, atr_threshold = 0.08, 1
-    attempts, wait_time, retry_attempts = 0, 30, 3
+    crossover_threshold, atr_threshold = 0.2, 1
+    attempts, wait_time, retry_attempts = 0, 60, 3
 
     attempts = 0
 
@@ -52,17 +52,18 @@ def buy_and_sell(symbol="US500", volume=0.05):
             print((f"Histogram: {histogram}, previous histogram: {prev_histogram}"))
             print(f"ATR: {atr_value}")
             print(f"VWAP: {vwap}")
+            print(f"Current position: {current_position}")
             print("-" * 40)
 
             # MACD-based logic
             if prev_macd is not None and prev_signal is not None and prev_histogram is not None:
-                if prev_macd < prev_signal and macd > signal and abs(macd - signal) > crossover_threshold and atr_value > atr_threshold:
+                if prev_macd < prev_signal and macd > signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
 
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if current_position == "short":
                         print("Closing short position.")
                         close_all_trades(client)
-                    tp_value = round((latest_close + 3 * atr_value), 1)  # Added ATR value for take profit
+                    tp_value = round(((latest_close + latest_open)/2 + 3 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 2 * atr_value
 
@@ -80,7 +81,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     if current_position == "long":
                         print("Closing long position.")
                         close_all_trades(client)
-                    tp_value = round((latest_close - 3 * atr_value), 1)  # Subtract ATR value for take profit
+                    tp_value = round(((latest_close + latest_open)/2 - 3 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 2 * atr_value
 
@@ -98,16 +99,16 @@ def buy_and_sell(symbol="US500", volume=0.05):
             prev_histogram = histogram
 
             if trade_opened:
-                if time.time() - trade_start_time < 1200:  # 480 seconds = 8 * 1 minutes
+                if time.time() - trade_start_time < 1200:  #1200 seconds = 20 * 1 minutes
                     if current_position == "long" and histogram < prev_histogram:
                         print(
-                            "Converging histogram detected in long position within 8 minutes. Closing trade due to potential false signal.")
+                            "Converging histogram detected in long position within 20 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
                     elif current_position == "short" and histogram > prev_histogram:
                         print(
-                            "Converging histogram detected in short position within 8 minutes. Closing trade due to potential false signal.")
+                            "Converging histogram detected in short position within 20 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag

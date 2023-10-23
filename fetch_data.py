@@ -19,7 +19,6 @@ def get_last_period_prices(client, symbol, period):
                 "symbol": symbol,
                 "period": period,  # Adjusted for variable periods
                 "start": from_timestamp,
-                "end": now
             }
         }
     })
