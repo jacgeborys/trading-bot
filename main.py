@@ -14,10 +14,11 @@ from trade import open_trade, close_all_trades
 prev_signal = None
 prev_histogram = None
 
-def buy_and_sell(symbol="US500", volume=0.05):
+def buy_and_sell(symbol="US500", volume=0.08):
     # Global Variables
     current_position = None
     trade_opened = False
+    trade_just_opened = False
     trade_start_time = None
 
     userId = os.environ.get("XTB_USERID")
@@ -70,6 +71,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     trade_result = open_trade(client, symbol, volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
                     trade_opened = True
+                    trade_just_opened = True
                     print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
@@ -88,13 +90,16 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     trade_result = open_trade(client, symbol, -volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
                     trade_opened = True
+                    trade_just_opened = True
                     print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Short", tp_value, offset])
                     current_position = "short"
+                elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) < crossover_threshold and atr_value > atr_threshold:
+                    print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
-            if trade_opened:
+            if trade_opened and not trade_just_opened:
                 if time.time() - trade_start_time < 1200:  #1200 seconds = 20 * 1 minutes
                     time_passed = time.time() - trade_start_time
                     print(f"Time passed from trade opening: {time_passed}")
@@ -111,6 +116,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
             prev_macd = macd
             prev_signal = signal
             prev_histogram = histogram
+            trade_just_opened = False
 
             # Reset attempts counter after successful connection
             attempts = 0
