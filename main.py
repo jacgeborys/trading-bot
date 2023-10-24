@@ -68,7 +68,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 2 * atr_value
 
-                    trade_result = open_trade(client, symbol, volume, offset, tp_value, sl_value)
+                    open_trade(client, symbol, volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
                     trade_opened = True
                     trade_just_opened = True
@@ -87,7 +87,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 2 * atr_value
 
-                    trade_result = open_trade(client, symbol, -volume, offset, tp_value, sl_value)
+                    open_trade(client, symbol, -volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
                     trade_opened = True
                     trade_just_opened = True
@@ -109,7 +109,6 @@ def buy_and_sell(symbol="US500", volume=0.08):
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
-
                     else:
                         print(f"Histogram is still growing")
 

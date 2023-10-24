@@ -35,7 +35,7 @@ def get_last_period_prices(client, symbol, period):
         low_prices = [open_price + (bar['low'] / (10 ** digits)) for open_price, bar in zip(open_prices, rate_infos)]
         volume = [bar['vol'] for bar in rate_infos]
 
-        return close_prices, latest_open, latest_close, high_prices, low_prices, volume
+        return open_prices, latest_open, latest_close, high_prices, low_prices, volume
     else:
         print(f"Failed to retrieve price data. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
         return [], None, None, [], []
