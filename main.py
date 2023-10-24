@@ -94,10 +94,6 @@ def buy_and_sell(symbol="US500", volume=0.05):
                                   None, None, None, None, "Trade opened", "Short", tp_value, offset])
                     current_position = "short"
 
-            prev_macd = macd
-            prev_signal = signal
-            prev_histogram = histogram
-
             if trade_opened:
                 if time.time() - trade_start_time < 1200:  #1200 seconds = 20 * 1 minutes
                     time_passed = time.time() - trade_start_time
@@ -108,8 +104,13 @@ def buy_and_sell(symbol="US500", volume=0.05):
                         close_all_trades(client)
                         current_position = None
                         trade_opened = False  # Reset the flag
+
                     else:
                         print(f"Histogram is still growing")
+
+            prev_macd = macd
+            prev_signal = signal
+            prev_histogram = histogram
 
             # Reset attempts counter after successful connection
             attempts = 0
