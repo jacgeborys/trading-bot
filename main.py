@@ -64,7 +64,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     if current_position == "short":
                         print("Closing short position.")
                         close_all_trades(client)
-                    tp_value = round(((latest_close + latest_open)/2 + 3 * atr_value), 1)  # Added ATR value for take profit
+                    tp_value = round(((latest_close + latest_open)/2 + 1 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 4 * atr_value
 
@@ -83,7 +83,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     if current_position == "long":
                         print("Closing long position.")
                         close_all_trades(client)
-                    tp_value = round(((latest_close + latest_open)/2 - 3 * atr_value), 1)  # Subtract ATR value for take profit
+                    tp_value = round(((latest_close + latest_open)/2 - 1 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 4 * atr_value
 
@@ -100,10 +100,19 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
             if trade_opened and not trade_just_opened:
-                if time.time() - trade_start_time < 1200:  #1200 seconds = 20 * 1 minutes
+                if time.time() - trade_start_time < 1200:  # 1200 seconds = 20 * 1 minutes
                     time_passed = time.time() - trade_start_time
                     print(f"Time passed from trade opening: {time_passed}")
-                    if abs(histogram) < abs(prev_histogram):
+
+                    # Check for sign change in histogram
+                    if histogram * prev_histogram < 0:  # This means the sign changed
+                        print("Histogram crossed the zero line. Closing trade due to potential reversal.")
+                        close_all_trades(client)
+                        current_position = None
+                        trade_opened = False  # Reset the flag
+
+                    # If sign hasn't changed, then check for convergence towards zero
+                    elif abs(histogram) < abs(prev_histogram):
                         print(
                             "Converging histogram detected within 20 minutes. Closing trade due to potential false signal.")
                         close_all_trades(client)
