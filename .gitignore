@@ -1,4 +1,4 @@
-# IDE settings
+echo # IDE settings
 .idea/
 # Test cache
 .pytest_cache/
