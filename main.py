@@ -66,7 +66,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                         # close_all_trades(client)
                     tp_value = round((latest_close + 1 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close - 4 * atr_value
+                    sl_value = latest_close - 6 * atr_value
 
                     open_trade(client, symbol, volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
@@ -85,7 +85,7 @@ def buy_and_sell(symbol="US500", volume=0.05):
                         # close_all_trades(client)
                     tp_value = round((latest_close - 1 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close + 4 * atr_value
+                    sl_value = latest_close + 6 * atr_value
 
                     open_trade(client, symbol, -volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
