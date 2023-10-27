@@ -4,7 +4,7 @@ import os
 import math
 import datetime
 
-from fetch_data import get_last_period_prices
+from fetch_data import get_last_period_prices, seconds_until_next_minute
 from file_ops import write_to_csv
 from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap
 from login import login_to_xtb
@@ -61,9 +61,6 @@ def buy_and_sell(symbol="US500", volume=0.05):
                 if prev_macd < prev_signal and macd > signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
 
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                    # if current_position == "short":
-                    #     print("Closing short position.")
-                        # close_all_trades(client)
                     tp_value = round((latest_close + 1 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 6 * atr_value
@@ -80,9 +77,6 @@ def buy_and_sell(symbol="US500", volume=0.05):
                 elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
 
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                    # if current_position == "long":
-                    #     print("Closing long position.")
-                        # close_all_trades(client)
                     tp_value = round((latest_close - 1 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 6 * atr_value
@@ -98,28 +92,6 @@ def buy_and_sell(symbol="US500", volume=0.05):
                     # current_position = "short"
                 elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) < crossover_threshold and atr_value > atr_threshold:
                     print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
-
-            # if trade_opened and not trade_just_opened:
-            #     if time.time() - trade_start_time < 302:  # 1200 seconds = 20 * 1 minutes
-            #         time_passed = time.time() - trade_start_time
-            #         print(f"Time passed from trade opening: {time_passed}")
-            #
-            #         # Check for sign change in histogram
-            #         if histogram * prev_histogram < 0:  # This means the sign changed
-            #             print("Histogram crossed the zero line. Closing trade due to potential reversal.")
-            #             close_all_trades(client)
-            #             current_position = None
-            #             trade_opened = False  # Reset the flag
-            #
-            #         # If sign hasn't changed, then check for convergence towards zero
-            #         elif abs(histogram) < abs(prev_histogram):
-            #             print(
-            #                 "Converging histogram detected within 20 minutes. Closing trade due to potential false signal.")
-            #             close_all_trades(client)
-            #             current_position = None
-            #             trade_opened = False  # Reset the flag
-            #         else:
-            #             print(f"Histogram is still growing")
 
             prev_macd = macd
             prev_signal = signal
@@ -148,7 +120,9 @@ def buy_and_sell(symbol="US500", volume=0.05):
 
             continue
 
-        time.sleep(wait_time)  # Wait for the next cycle
+        # Sleep until the next minute plus one second
+        sleep_time = seconds_until_next_minute() + 1
+        time.sleep(sleep_time)
 
 if __name__ == "__main__":
     buy_and_sell()

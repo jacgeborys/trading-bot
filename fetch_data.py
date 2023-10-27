@@ -39,3 +39,8 @@ def get_last_period_prices(client, symbol, period):
     else:
         print(f"Failed to retrieve price data. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
         return [], None, None, [], []
+
+def seconds_until_next_minute():
+    current_time = time.time()
+    next_minute = math.ceil(current_time / 60) * 60
+    return next_minute - current_time
