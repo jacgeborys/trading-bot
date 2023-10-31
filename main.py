@@ -4,19 +4,18 @@ import os
 import math
 import datetime
 
-from fetch_data import get_last_period_prices
+from fetch_data import get_last_period_prices, get_current_positions
 from file_ops import write_to_csv
 from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap
 from login import login_to_xtb
-from trade import open_trade, close_all_trades
+from trade import open_trade, close_all_trades, close_trade
 
 # State variables
 prev_signal = None
 prev_histogram = None
 
-def buy_and_sell(symbol="US500", volume=0.08):
+def buy_and_sell(symbol="US500", volume=0.1):
     # Global Variables
-    current_position = None
     trade_opened = False
     trade_just_opened = False
     trade_start_time = None
@@ -28,7 +27,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
         return
 
     prev_macd, prev_signal, prev_histogram = None, None, None
-    crossover_threshold, atr_threshold = 0.12, 1
+    crossover_threshold, atr_threshold = 0.10, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
 
     attempts = 0
@@ -40,9 +39,10 @@ def buy_and_sell(symbol="US500", volume=0.08):
             macd, signal, histogram = calculate_macd(prices)
             atr_value = calculate_atr(highs, lows, prices)
             vwap = calculate_vwap(prices[-60:], volume_data[-60:])
+            positions = get_current_positions(client)
 
             log_data = [datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), latest_open, latest_close,
-                        macd, signal, vwap, atr_value, current_position]
+                        macd, signal, vwap, atr_value]
             write_to_csv(log_data)
 
             print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
@@ -53,7 +53,8 @@ def buy_and_sell(symbol="US500", volume=0.08):
             print((f"Histogram: {histogram}, previous histogram: {prev_histogram}"))
             print(f"ATR: {atr_value}")
             print(f"VWAP: {vwap}")
-            print(f"Current position: {current_position}")
+            print(f"Number of open long positions: {positions['long_count']}")
+            print(f"Number of open short positions: {positions['short_count']}")
             print("-" * 40)
 
             # MACD-based logic
@@ -61,10 +62,10 @@ def buy_and_sell(symbol="US500", volume=0.08):
                 if prev_macd < prev_signal and macd > signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
 
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                    if current_position == "short":
-                        print("Closing short position.")
-                        close_all_trades(client)
-                    tp_value = round(((latest_close + latest_open)/2 + 1 * atr_value), 1)  # Added ATR value for take profit
+                    if positions['short']:
+                        print("Closing 20% of short position.")
+                        close_trade(client, 1)  # 1 for short position
+                    tp_value = round((latest_close + 2 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 4 * atr_value
 
@@ -76,14 +77,13 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Long", tp_value, offset])
-                    current_position = "long"
                 elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
 
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
-                    if current_position == "long":
-                        print("Closing long position.")
-                        close_all_trades(client)
-                    tp_value = round(((latest_close + latest_open)/2 - 1 * atr_value), 1)  # Subtract ATR value for take profit
+                    if positions['long']:
+                        print("Closing 20% of long position.")
+                        close_trade(client, 0)  # 0 for long position
+                    tp_value = round((latest_close - 2 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 4 * atr_value
 
@@ -95,7 +95,6 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
                     write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
                                   None, None, None, None, "Trade opened", "Short", tp_value, offset])
-                    current_position = "short"
                 elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) < crossover_threshold and atr_value > atr_threshold:
                     print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
@@ -107,16 +106,14 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     # Check for sign change in histogram
                     if histogram * prev_histogram < 0:  # This means the sign changed
                         print("Histogram crossed the zero line. Closing trade due to potential reversal.")
-                        close_all_trades(client)
-                        current_position = None
+                        close_trade(client)
                         trade_opened = False  # Reset the flag
 
                     # If sign hasn't changed, then check for convergence towards zero
                     elif abs(histogram) < abs(prev_histogram):
                         print(
                             "Converging histogram detected within 20 minutes. Closing trade due to potential false signal.")
-                        close_all_trades(client)
-                        current_position = None
+                        close_trade(client)
                         trade_opened = False  # Reset the flag
                     else:
                         print(f"Histogram is still growing")

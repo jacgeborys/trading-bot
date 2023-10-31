@@ -39,3 +39,20 @@ def get_last_period_prices(client, symbol, period):
     else:
         print(f"Failed to retrieve price data. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
         return [], None, None, [], []
+
+# Function to get current open positions and their counts
+def get_current_positions(client):
+    trades_response = client.execute({"command": "getTrades", "arguments": {"openedOnly": True}})
+    trades = trades_response.get("returnData", [])
+
+    positions = {'long': False, 'short': False, 'long_count': 0, 'short_count': 0}
+    for trade in trades:
+        if trade["cmd"] == 0:  # 0 for long position
+            positions['long'] = True
+            positions['long_count'] += 1
+        elif trade["cmd"] == 1:  # 1 for short position
+            positions['short'] = True
+            positions['short_count'] += 1
+
+    return positions
+
