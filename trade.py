@@ -114,7 +114,7 @@ def close_trade(client, position_type):
 
     symbol = trade_to_close["symbol"]
     order = trade_to_close["order"]
-    close_volume = round(0.2 * trade_to_close["volume"], 2)
+    close_volume = 0.02
 
     # Prepare closing payload
     payload = {

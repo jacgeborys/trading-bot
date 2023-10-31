@@ -19,6 +19,7 @@ def buy_and_sell(symbol="US500", volume=0.1):
     trade_opened = False
     trade_just_opened = False
     trade_start_time = None
+    current_position = None  # Add this at the start of the function
 
     userId = os.environ.get("XTB_USERID")
     password = os.environ.get("XTB_PASSWORD")
@@ -104,16 +105,25 @@ def buy_and_sell(symbol="US500", volume=0.1):
                     print(f"Time passed from trade opening: {time_passed}")
 
                     # Check for sign change in histogram
-                    if histogram * prev_histogram < 0:  # This means the sign changed
-                        print("Histogram crossed the zero line. Closing trade due to potential reversal.")
-                        close_trade(client)
+                    if histogram * prev_histogram < 0 and prev_histogram > 0:  # This means the sign changed
+                        print("Histogram crossed the zero line. Partially closing long trade due to potential reversal.")
+                        close_trade(client, 0)
+                        trade_opened = False  # Reset the flag
+                    elif histogram * prev_histogram < 0 and prev_histogram < 0:
+                        print("Histogram crossed the zero line. Partially closing short trade due to potential reversal.")
+                        close_trade(client, 1)
                         trade_opened = False  # Reset the flag
 
                     # If sign hasn't changed, then check for convergence towards zero
-                    elif abs(histogram) < abs(prev_histogram):
+                    elif abs(histogram) < abs(prev_histogram) and histogram > 0:
                         print(
-                            "Converging histogram detected within 20 minutes. Closing trade due to potential false signal.")
-                        close_trade(client)
+                            "Converging histogram detected within 20 minutes. Partially closing long trade due to potential false signal.")
+                        close_trade(client, 0)
+                        trade_opened = False  # Reset the flag
+                    elif abs(histogram) < abs(prev_histogram) and histogram < 0:
+                        print(
+                            "Converging histogram detected within 20 minutes. Partially closing short trade due to potential false signal.")
+                        close_trade(client, 1)
                         trade_opened = False  # Reset the flag
                     else:
                         print(f"Histogram is still growing")
