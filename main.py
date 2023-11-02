@@ -10,16 +10,9 @@ from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_v
 from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
-# State variables
-prev_signal = None
-prev_histogram = None
-
 def buy_and_sell(symbol="US500", volume=0.06):
     # Global Variables
-    trade_opened = False
     trade_just_opened = False
-    trade_start_time = None
-    current_position = None  # Add this at the start of the function
 
     userId = os.environ.get("XTB_USERID")
     password = os.environ.get("XTB_PASSWORD")
@@ -27,7 +20,7 @@ def buy_and_sell(symbol="US500", volume=0.06):
     if not client or not ssid:
         return
 
-    prev_macd, prev_signal, prev_histogram = None, None, None
+    prev_macd, prev_signal, prev_histogram, prev_prev_histogram = None, None, None, None
     crossover_threshold, atr_threshold = 0.10, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
 
@@ -35,12 +28,27 @@ def buy_and_sell(symbol="US500", volume=0.06):
 
     while True:
         try:
+
             # Fetch and prepare data
             prices, latest_open, latest_close, highs, lows, volume_data = get_last_period_prices(client, symbol, period=1)
             macd, signal, histogram = calculate_macd(prices)
             atr_value = calculate_atr(highs, lows, prices)
             vwap = calculate_vwap(prices[-60:], volume_data[-60:])
             positions = get_current_positions(client)
+
+            # Print statements to understand histogram direction and position
+            if prev_histogram is not None:
+                if histogram > prev_histogram:
+                    print("Histogram is rising")
+                elif histogram < prev_histogram:
+                    print("Histogram is falling")
+                else:
+                    print("Histogram is unchanged")
+
+                if histogram > 0:
+                    print("Histogram is above zero")
+                else:
+                    print("Histogram is below zero")
 
             log_data = [datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), latest_open, latest_close,
                         macd, signal, vwap, atr_value]
@@ -72,7 +80,6 @@ def buy_and_sell(symbol="US500", volume=0.06):
 
                     open_trade(client, symbol, volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
-                    trade_opened = True
                     trade_just_opened = True
                     print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
@@ -90,7 +97,6 @@ def buy_and_sell(symbol="US500", volume=0.06):
 
                     open_trade(client, symbol, -volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
-                    trade_opened = True
                     trade_just_opened = True
                     print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
                     print(f"Trade start time (from open_trade function): {trade_start_time}")
@@ -99,28 +105,40 @@ def buy_and_sell(symbol="US500", volume=0.06):
                 elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) < crossover_threshold and atr_value > atr_threshold:
                     print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
-            if trade_opened and not trade_just_opened:
-                # Check for sign change in histogram
-                if histogram * prev_histogram < 0 and prev_histogram > 0:  # This means the sign changed
-                    print("Histogram crossed the zero line. Partially closing long trade due to potential reversal.")
-                    close_trade(client, 0, 0.01)
-                elif histogram * prev_histogram < 0 and prev_histogram < 0:
-                    print("Histogram crossed the zero line. Partially closing short trade due to potential reversal.")
-                    close_trade(client, 1, 0.01)
-                # If sign hasn't changed, then check for convergence towards zero
-                elif abs(histogram) < abs(prev_histogram) and histogram > 0:
-                    print(
-                        "Converging histogram detected within 20 minutes. Partially closing long trade due to potential false signal.")
-                    close_trade(client, 0, 0.01)
-                elif abs(histogram) < abs(prev_histogram) and histogram < 0:
-                    print(
-                        "Converging histogram detected within 20 minutes. Partially closing short trade due to potential false signal.")
-                    close_trade(client, 1, 0.01)
-                else:
-                    print(f"Histogram is still growing")
+            if prev_histogram is not None and prev_prev_histogram is not None:
+                if (
+                        histogram < prev_histogram and prev_histogram > prev_prev_histogram):  # For positive histograms, indicating it's narrowing down
+                    print("Histogram has changed direction from extending to narrowing (positive). Closing 0.01 pips.")
+                    if positions['long']:
+                        close_trade(client, 0, 0.01)  # Closing long position
+                    elif positions['short']:
+                        close_trade(client, 1, 0.01)  # Closing short position
+
+                elif (
+                        histogram > prev_histogram and prev_histogram < prev_prev_histogram):  # For negative histograms, indicating it's narrowing up
+                    print("Histogram has changed direction from extending to narrowing (negative). Closing 0.01 pips.")
+                    if positions['long']:
+                        close_trade(client, 0, 0.01)  # Closing long position
+                    elif positions['short']:
+                        close_trade(client, 1, 0.01)  # Closing short position
+
+            # Check for partial profit taking
+            profit_threshold = 20  # Adjust the threshold as per your needs
+            partial_close_volume = 0.01
+
+            for profit in positions['long_profits']:
+                if profit >= profit_threshold:
+                    print(f"Partial profit taking for long position with profit: {profit}")
+                    close_trade(client, 0, partial_close_volume)
+
+            for profit in positions['short_profits']:
+                if profit >= profit_threshold:
+                    print(f"Partial profit taking for short position with profit: {profit}")
+                    close_trade(client, 1, partial_close_volume)
 
             prev_macd = macd
             prev_signal = signal
+            prev_prev_histogram = prev_histogram
             prev_histogram = histogram
             trade_just_opened = False
 
