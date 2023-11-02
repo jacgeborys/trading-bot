@@ -92,7 +92,7 @@ def close_all_trades(client):
             print(f"Failed to close trade with order ID {order}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
 
 
-def close_trade(client, position_type):
+def close_trade(client, position_type, volume):
     # Get all open trades
     trades_response = client.execute({"command": "getTrades", "arguments": {"openedOnly": True}})
     trades = trades_response.get("returnData", [])
@@ -114,7 +114,10 @@ def close_trade(client, position_type):
 
     symbol = trade_to_close["symbol"]
     order = trade_to_close["order"]
-    close_volume = 0.02
+    if trade_to_close["volume"] >= volume:
+        close_volume = volume
+    else:
+        close_volume = trade_to_close["volume"]
 
     # Prepare closing payload
     payload = {

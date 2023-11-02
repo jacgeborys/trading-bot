@@ -21,3 +21,4 @@ def write_to_csv(row, filepath='C:\\Users\\Asus\\OneDrive\\Pulpit\\Rozne\\Python
 
         # Write the actual row
         writer.writerow(row)
+

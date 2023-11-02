@@ -4,7 +4,7 @@ import os
 import math
 import datetime
 
-from fetch_data import get_last_period_prices, get_current_positions
+from fetch_data import get_last_period_prices, get_current_positions, seconds_until_next_minute
 from file_ops import write_to_csv
 from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap
 from login import login_to_xtb
@@ -14,7 +14,7 @@ from trade import open_trade, close_all_trades, close_trade
 prev_signal = None
 prev_histogram = None
 
-def buy_and_sell(symbol="US500", volume=0.1):
+def buy_and_sell(symbol="US500", volume=0.06):
     # Global Variables
     trade_opened = False
     trade_just_opened = False
@@ -65,10 +65,10 @@ def buy_and_sell(symbol="US500", volume=0.1):
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['short']:
                         print("Closing 20% of short position.")
-                        close_trade(client, 1)  # 1 for short position
-                    tp_value = round((latest_close + 2 * atr_value), 1)  # Added ATR value for take profit
+                        close_trade(client, 1, 0.02)  # 1 for short position
+                    tp_value = round((latest_close + 3 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close - 4 * atr_value
+                    sl_value = latest_close - 5 * atr_value
 
                     open_trade(client, symbol, volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
@@ -83,10 +83,10 @@ def buy_and_sell(symbol="US500", volume=0.1):
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['long']:
                         print("Closing 20% of long position.")
-                        close_trade(client, 0)  # 0 for long position
-                    tp_value = round((latest_close - 2 * atr_value), 1)  # Subtract ATR value for take profit
+                        close_trade(client, 0, 0.02)  # 0 for long position
+                    tp_value = round((latest_close - 3 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close + 4 * atr_value
+                    sl_value = latest_close + 5 * atr_value
 
                     open_trade(client, symbol, -volume, offset, tp_value, sl_value)
                     trade_start_time = time.time()
@@ -100,33 +100,24 @@ def buy_and_sell(symbol="US500", volume=0.1):
                     print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
             if trade_opened and not trade_just_opened:
-                if time.time() - trade_start_time < 1200:  # 1200 seconds = 20 * 1 minutes
-                    time_passed = time.time() - trade_start_time
-                    print(f"Time passed from trade opening: {time_passed}")
-
-                    # Check for sign change in histogram
-                    if histogram * prev_histogram < 0 and prev_histogram > 0:  # This means the sign changed
-                        print("Histogram crossed the zero line. Partially closing long trade due to potential reversal.")
-                        close_trade(client, 0)
-                        trade_opened = False  # Reset the flag
-                    elif histogram * prev_histogram < 0 and prev_histogram < 0:
-                        print("Histogram crossed the zero line. Partially closing short trade due to potential reversal.")
-                        close_trade(client, 1)
-                        trade_opened = False  # Reset the flag
-
-                    # If sign hasn't changed, then check for convergence towards zero
-                    elif abs(histogram) < abs(prev_histogram) and histogram > 0:
-                        print(
-                            "Converging histogram detected within 20 minutes. Partially closing long trade due to potential false signal.")
-                        close_trade(client, 0)
-                        trade_opened = False  # Reset the flag
-                    elif abs(histogram) < abs(prev_histogram) and histogram < 0:
-                        print(
-                            "Converging histogram detected within 20 minutes. Partially closing short trade due to potential false signal.")
-                        close_trade(client, 1)
-                        trade_opened = False  # Reset the flag
-                    else:
-                        print(f"Histogram is still growing")
+                # Check for sign change in histogram
+                if histogram * prev_histogram < 0 and prev_histogram > 0:  # This means the sign changed
+                    print("Histogram crossed the zero line. Partially closing long trade due to potential reversal.")
+                    close_trade(client, 0, 0.01)
+                elif histogram * prev_histogram < 0 and prev_histogram < 0:
+                    print("Histogram crossed the zero line. Partially closing short trade due to potential reversal.")
+                    close_trade(client, 1, 0.01)
+                # If sign hasn't changed, then check for convergence towards zero
+                elif abs(histogram) < abs(prev_histogram) and histogram > 0:
+                    print(
+                        "Converging histogram detected within 20 minutes. Partially closing long trade due to potential false signal.")
+                    close_trade(client, 0, 0.01)
+                elif abs(histogram) < abs(prev_histogram) and histogram < 0:
+                    print(
+                        "Converging histogram detected within 20 minutes. Partially closing short trade due to potential false signal.")
+                    close_trade(client, 1, 0.01)
+                else:
+                    print(f"Histogram is still growing")
 
             prev_macd = macd
             prev_signal = signal
@@ -155,7 +146,9 @@ def buy_and_sell(symbol="US500", volume=0.1):
 
             continue
 
-        time.sleep(wait_time)  # Wait for the next cycle
+        # Sleep until the next minute plus one second
+        sleep_time = seconds_until_next_minute() + 1
+        time.sleep(sleep_time)
 
 if __name__ == "__main__":
     buy_and_sell()

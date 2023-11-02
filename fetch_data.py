@@ -56,3 +56,7 @@ def get_current_positions(client):
 
     return positions
 
+def seconds_until_next_minute():
+    current_time = time.time()  # current time in seconds
+    next_minute = math.ceil(current_time / 60) * 60  # next full minute in seconds
+    return next_minute - current_time
