@@ -10,7 +10,7 @@ from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_v
 from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
-def buy_and_sell(symbol="US500", volume=0.06):
+def buy_and_sell(symbol="US500", volume=0.07):
     # Global Variables
     trade_just_opened = False
 
@@ -21,8 +21,10 @@ def buy_and_sell(symbol="US500", volume=0.06):
         return
 
     prev_macd, prev_signal, prev_histogram, prev_prev_histogram = None, None, None, None
-    crossover_threshold, atr_threshold = 0.10, 1
+    crossover_threshold, atr_threshold = 0.05, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
+    profit_threshold = 20  # For partial profit-taking
+    partial_close_volume = 0.02
 
     attempts = 0
 
@@ -73,7 +75,7 @@ def buy_and_sell(symbol="US500", volume=0.06):
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['short']:
                         print("Closing 20% of short position.")
-                        close_trade(client, 1, 0.02)  # 1 for short position
+                        close_trade(client, 1, 0.01)  # 1 for short position
                     tp_value = round((latest_close + 3 * atr_value), 1)  # Added ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close - 5 * atr_value
@@ -90,7 +92,7 @@ def buy_and_sell(symbol="US500", volume=0.06):
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['long']:
                         print("Closing 20% of long position.")
-                        close_trade(client, 0, 0.02)  # 0 for long position
+                        close_trade(client, 0, 0.01)  # 0 for long position
                     tp_value = round((latest_close - 3 * atr_value), 1)  # Subtract ATR value for take profit
                     offset = math.ceil(1 * atr_value + 0.9)
                     sl_value = latest_close + 5 * atr_value
@@ -105,34 +107,31 @@ def buy_and_sell(symbol="US500", volume=0.06):
                 elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) < crossover_threshold and atr_value > atr_threshold:
                     print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
-            if prev_histogram is not None and prev_prev_histogram is not None:
-                if (
-                        histogram < prev_histogram and prev_histogram > prev_prev_histogram):  # For positive histograms, indicating it's narrowing down
-                    print("Histogram has changed direction from extending to narrowing (positive). Closing 0.01 pips.")
-                    if positions['long']:
-                        close_trade(client, 0, 0.01)  # Closing long position
-                    elif positions['short']:
-                        close_trade(client, 1, 0.01)  # Closing short position
+            # if prev_histogram is not None and prev_prev_histogram is not None:
+            #     if (
+            #             histogram < prev_histogram and prev_histogram > prev_prev_histogram):  # For positive histograms, indicating it's narrowing down
+            #         print("Histogram has changed direction from extending to narrowing (positive). Closing 0.01 pips.")
+            #         if positions['long']:
+            #             close_trade(client, 0, 0.01)  # Closing long position
+            #         elif positions['short']:
+            #             close_trade(client, 1, 0.01)  # Closing short position
+            #
+            #     elif (
+            #             histogram > prev_histogram and prev_histogram < prev_prev_histogram):  # For negative histograms, indicating it's narrowing up
+            #         print("Histogram has changed direction from extending to narrowing (negative). Closing 0.01 pips.")
+            #         if positions['long']:
+            #             close_trade(client, 0, 0.01)  # Closing long position
+            #         elif positions['short']:
+            #             close_trade(client, 1, 0.01)  # Closing short position
 
-                elif (
-                        histogram > prev_histogram and prev_histogram < prev_prev_histogram):  # For negative histograms, indicating it's narrowing up
-                    print("Histogram has changed direction from extending to narrowing (negative). Closing 0.01 pips.")
-                    if positions['long']:
-                        close_trade(client, 0, 0.01)  # Closing long position
-                    elif positions['short']:
-                        close_trade(client, 1, 0.01)  # Closing short position
-
-            # Check for partial profit taking
-            profit_threshold = 20  # Adjust the threshold as per your needs
-            partial_close_volume = 0.01
 
             for profit in positions['long_profits']:
-                if profit >= profit_threshold:
+                if profit > profit_threshold:
                     print(f"Partial profit taking for long position with profit: {profit}")
                     close_trade(client, 0, partial_close_volume)
 
             for profit in positions['short_profits']:
-                if profit >= profit_threshold:
+                if profit > profit_threshold:
                     print(f"Partial profit taking for short position with profit: {profit}")
                     close_trade(client, 1, partial_close_volume)
 
