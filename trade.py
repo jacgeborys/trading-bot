@@ -92,54 +92,55 @@ def close_all_trades(client):
             print(f"Failed to close trade with order ID {order}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
 
 
-def close_trade(client, position_type, volume):
+def close_trade(client, position_type, volume_per_trade):
     # Get all open trades
     trades_response = client.execute({"command": "getTrades", "arguments": {"openedOnly": True}})
     trades = trades_response.get("returnData", [])
 
     if not trades:
         print("No trades to close.")
-        return
+        return "No trades available"
 
-    # Filter for the desired trade
-    trade_to_close = None
+    close_responses = []
+
     for trade in trades:
         if trade["cmd"] == position_type:
-            trade_to_close = trade
-            break
+            symbol = trade["symbol"]
+            order = trade["order"]
+            trade_volume = trade["volume"]
 
-    if not trade_to_close:
-        print(f"No {position_type} trade found to close.")
-        return
+            if trade_volume >= volume_per_trade:
+                # Prepare closing payload
+                payload = {
+                    "command": "tradeTransaction",
+                    "arguments": {
+                        "tradeTransInfo": {
+                            "cmd": position_type + 2,  # 2 or 3 for partial close long/short
+                            "type": 2,  # Close order type
+                            "price": 1.0,  # A value above 0
+                            "sl": 0.0,
+                            "tp": 0.0,
+                            "symbol": symbol,
+                            "volume": volume_per_trade,
+                            "order": order,  # Using the order number found
+                            "customComment": f"Partially closing {volume_per_trade} of {symbol} Trade"
+                        }
+                    }
+                }
 
-    symbol = trade_to_close["symbol"]
-    order = trade_to_close["order"]
-    if trade_to_close["volume"] >= volume:
-        close_volume = volume
-    else:
-        close_volume = trade_to_close["volume"]
+                # Execute trade close command
+                response = client.execute(payload)
+                close_responses.append(response)
+            else:
+                print(f"Trade volume {trade_volume} is less than the close volume {volume_per_trade}.")
+                close_responses.append(f"Trade volume {trade_volume} too small to close {volume_per_trade}.")
 
-    # Prepare closing payload
-    payload = {
-        "command": "tradeTransaction",
-        "arguments": {
-            "tradeTransInfo": {
-                "cmd": position_type,  # Either close long (0) or short (1)
-                "type": 2,  # Close order type
-                "price": 1.0,  # A value above 0
-                "sl": 0.0,
-                "tp": 0.0,
-                "symbol": symbol,
-                "volume": close_volume,
-                "order": order,  # Using the order number found
-                "customComment": f"Closing {close_volume} of {symbol} Trade"
-            }
-        }
-    }
+    if not close_responses:
+        print("No trades were closed.")
+        return "No matching trades were closed"
 
-    # Execute trade close command
-    response = client.execute(payload)
-    return response
+    return close_responses
+
 
 
 

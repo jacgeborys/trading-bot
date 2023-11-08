@@ -10,7 +10,7 @@ from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_v
 from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
-def buy_and_sell(symbol="US500", volume=0.07):
+def buy_and_sell(symbol="US500", volume=0.08):
     # Global Variables
     trade_just_opened = False
 
@@ -25,6 +25,7 @@ def buy_and_sell(symbol="US500", volume=0.07):
     attempts, wait_time, retry_attempts = 0, 60, 3
     profit_threshold = 20  # For partial profit-taking
     partial_close_volume = 0.02
+    loss_partial_close_volume = 0.01
 
     attempts = 0
 
@@ -70,42 +71,53 @@ def buy_and_sell(symbol="US500", volume=0.07):
 
             # MACD-based logic
             if prev_macd is not None and prev_signal is not None and prev_histogram is not None:
-                if prev_macd < prev_signal and macd > signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
+                if prev_macd < prev_signal and macd > signal:
 
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['short']:
-                        print("Closing 20% of short position.")
-                        close_trade(client, 1, 0.01)  # 1 for short position
-                    tp_value = round((latest_close + 3 * atr_value), 1)  # Added ATR value for take profit
-                    offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close - 5 * atr_value
+                        print(f"Closing {loss_partial_close_volume} of short position.")
+                        close_trade(client, 1, loss_partial_close_volume)  # 1 for short position
+                    else:
+                        print("No short positions to partially close")
 
-                    open_trade(client, symbol, volume, offset, tp_value, sl_value)
-                    trade_start_time = time.time()
-                    trade_just_opened = True
-                    print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
-                    print(f"Trade start time (from open_trade function): {trade_start_time}")
-                    write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
-                                  None, None, None, None, "Trade opened", "Long", tp_value, offset])
-                elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
+                    if abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
+                        tp_value = round((latest_close + 3 * atr_value), 1)  # Added ATR value for take profit
+                        offset = math.ceil(1 * atr_value + 0.9)
+                        sl_value = latest_close - 5 * atr_value
+
+                        open_trade(client, symbol, volume, offset, tp_value, sl_value)
+                        trade_start_time = time.time()
+                        trade_just_opened = True
+                        print(f"Opening long position. Take profit set at {tp_value}. Trailing offset is {offset}.")
+                        print(f"Trade start time (from open_trade function): {trade_start_time}")
+                        write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
+                                      None, None, None, None, "Trade opened", "Long", tp_value, offset])
+                    else:
+                        print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
+
+                elif prev_macd > prev_signal and macd < signal:
 
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['long']:
-                        print("Closing 20% of long position.")
-                        close_trade(client, 0, 0.01)  # 0 for long position
-                    tp_value = round((latest_close - 3 * atr_value), 1)  # Subtract ATR value for take profit
-                    offset = math.ceil(1 * atr_value + 0.9)
-                    sl_value = latest_close + 5 * atr_value
+                        print(f"Closing {loss_partial_close_volume} of long position.")
+                        close_trade(client, 0, loss_partial_close_volume)  # 0 for long position
+                    else:
+                        print("No long positions to partially close")
 
-                    open_trade(client, symbol, -volume, offset, tp_value, sl_value)
-                    trade_start_time = time.time()
-                    trade_just_opened = True
-                    print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
-                    print(f"Trade start time (from open_trade function): {trade_start_time}")
-                    write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
-                                  None, None, None, None, "Trade opened", "Short", tp_value, offset])
-                elif prev_macd > prev_signal and macd < signal and abs(histogram - prev_histogram) < crossover_threshold and atr_value > atr_threshold:
-                    print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
+                    if abs(histogram - prev_histogram) > crossover_threshold and atr_value > atr_threshold:
+                        tp_value = round((latest_close - 3 * atr_value), 1)  # Subtract ATR value for take profit
+                        offset = math.ceil(1 * atr_value + 0.9)
+                        sl_value = latest_close + 5 * atr_value
+
+                        open_trade(client, symbol, -volume, offset, tp_value, sl_value)
+                        trade_start_time = time.time()
+                        trade_just_opened = True
+                        print(f"Opening short position. Take profit set at {tp_value}. Trailing offset is {offset}.")
+                        print(f"Trade start time (from open_trade function): {trade_start_time}")
+                        write_to_csv([datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), None, None, None, None,
+                                      None, None, None, None, "Trade opened", "Short", tp_value, offset])
+                    else:
+                        print(f"The histogram difference was {histogram - prev_histogram}. Not opening the trade")
 
             # if prev_histogram is not None and prev_prev_histogram is not None:
             #     if (
