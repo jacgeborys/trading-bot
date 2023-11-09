@@ -21,11 +21,13 @@ def buy_and_sell(symbol="US500", volume=0.08):
         return
 
     prev_macd, prev_signal, prev_histogram, prev_prev_histogram = None, None, None, None
-    crossover_threshold, atr_threshold = 0.05, 1
+    crossover_threshold, atr_threshold = 0.08, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
     profit_threshold = 20  # For partial profit-taking
-    partial_close_volume = 0.02
-    loss_partial_close_volume = 0.01
+    loss_threshold = 40
+    partial_close_volume_profitable = 0.02
+    partial_close_volume_crossover = 0.01
+    partial_close_volume_losing = 0.01
 
     attempts = 0
 
@@ -75,8 +77,8 @@ def buy_and_sell(symbol="US500", volume=0.08):
 
                     print(f"Bullish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['short']:
-                        print(f"Closing {loss_partial_close_volume} of short position.")
-                        close_trade(client, 1, loss_partial_close_volume)  # 1 for short position
+                        print(f"Closing {partial_close_volume_crossover} of short position.")
+                        close_trade(client, 1, partial_close_volume_crossover)  # 1 for short position
                     else:
                         print("No short positions to partially close")
 
@@ -99,8 +101,8 @@ def buy_and_sell(symbol="US500", volume=0.08):
 
                     print(f"Bearish crossover detected at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
                     if positions['long']:
-                        print(f"Closing {loss_partial_close_volume} of long position.")
-                        close_trade(client, 0, loss_partial_close_volume)  # 0 for long position
+                        print(f"Closing {partial_close_volume_crossover} of long position.")
+                        close_trade(client, 0, partial_close_volume_crossover)  # 0 for long position
                     else:
                         print("No long positions to partially close")
 
@@ -136,16 +138,34 @@ def buy_and_sell(symbol="US500", volume=0.08):
             #         elif positions['short']:
             #             close_trade(client, 1, 0.01)  # Closing short position
 
-
             for profit in positions['long_profits']:
                 if profit > profit_threshold:
                     print(f"Partial profit taking for long position with profit: {profit}")
-                    close_trade(client, 0, partial_close_volume)
+                    close_trade(client, 0, partial_close_volume_profitable, min_profit=profit_threshold)
+                elif profit < -loss_threshold:  # Notice the condition change here
+                    print(f"Partial loss saving for long position with loss: {profit}")
+                    close_trade(client, 0, partial_close_volume_losing, max_loss=-loss_threshold)
 
+            # Do the same for short positions...
+
+            # For short positions
             for profit in positions['short_profits']:
                 if profit > profit_threshold:
                     print(f"Partial profit taking for short position with profit: {profit}")
-                    close_trade(client, 1, partial_close_volume)
+                    close_trade(client, 1, partial_close_volume_profitable, min_profit=profit_threshold)
+                elif profit < -loss_threshold:  # Use a consistent negative threshold for losses
+                    print(f"Partial loss saving for short position with loss: {profit}")
+                    close_trade(client, 1, partial_close_volume_losing, max_loss=-loss_threshold)
+
+            # For long positions, looks like you mixed up the 'long_profits' and 'short_profits' in the loop.
+            # Make sure to loop through 'long_profits' for long positions.
+            for profit in positions['long_profits']:
+                if profit > profit_threshold:
+                    print(f"Partial profit taking for long position with profit: {profit}")
+                    close_trade(client, 0, partial_close_volume_profitable, min_profit=profit_threshold)
+                elif profit < -loss_threshold:  # Again, negative threshold for losses
+                    print(f"Partial loss saving for long position with loss: {profit}")
+                    close_trade(client, 0, partial_close_volume_losing, max_loss=-loss_threshold)
 
             prev_macd = macd
             prev_signal = signal

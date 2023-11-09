@@ -91,8 +91,7 @@ def close_all_trades(client):
         else:
             print(f"Failed to close trade with order ID {order}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
 
-
-def close_trade(client, position_type, volume_per_trade):
+def close_trade(client, position_type, volume_per_trade, min_profit=None, max_loss=None):
     # Get all open trades
     trades_response = client.execute({"command": "getTrades", "arguments": {"openedOnly": True}})
     trades = trades_response.get("returnData", [])
@@ -105,17 +104,24 @@ def close_trade(client, position_type, volume_per_trade):
 
     for trade in trades:
         if trade["cmd"] == position_type:
+            # Extract trade volume from the trade
+            trade_volume = trade["volume"]
             symbol = trade["symbol"]
             order = trade["order"]
-            trade_volume = trade["volume"]
 
-            if trade_volume >= volume_per_trade:
+            should_close = False
+            if min_profit is not None and trade["profit"] >= min_profit:
+                should_close = True
+            if max_loss is not None and trade["profit"] <= max_loss:
+                should_close = True
+
+            if should_close and trade_volume >= volume_per_trade:
                 # Prepare closing payload
                 payload = {
                     "command": "tradeTransaction",
                     "arguments": {
                         "tradeTransInfo": {
-                            "cmd": position_type + 2,  # 2 or 3 for partial close long/short
+                            "cmd": position_type,  # This value remains
                             "type": 2,  # Close order type
                             "price": 1.0,  # A value above 0
                             "sl": 0.0,
@@ -131,6 +137,10 @@ def close_trade(client, position_type, volume_per_trade):
                 # Execute trade close command
                 response = client.execute(payload)
                 close_responses.append(response)
+
+            elif not should_close:
+                continue  # Skip trades that do not meet profit or loss conditions
+
             else:
                 print(f"Trade volume {trade_volume} is less than the close volume {volume_per_trade}.")
                 close_responses.append(f"Trade volume {trade_volume} too small to close {volume_per_trade}.")
@@ -140,6 +150,8 @@ def close_trade(client, position_type, volume_per_trade):
         return "No matching trades were closed"
 
     return close_responses
+
+
 
 
 
