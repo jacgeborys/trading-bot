@@ -21,7 +21,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
         return
 
     prev_macd, prev_signal, prev_histogram, prev_prev_histogram = None, None, None, None
-    crossover_threshold, atr_threshold = 0.08, 1
+    crossover_threshold, atr_threshold = 0.1, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
     profit_threshold = 20  # For partial profit-taking
     loss_threshold = 40
@@ -146,7 +146,6 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     print(f"Partial loss saving for long position with loss: {profit}")
                     close_trade(client, 0, partial_close_volume_losing, max_loss=-loss_threshold)
 
-            # Do the same for short positions...
 
             # For short positions
             for profit in positions['short_profits']:
@@ -157,15 +156,6 @@ def buy_and_sell(symbol="US500", volume=0.08):
                     print(f"Partial loss saving for short position with loss: {profit}")
                     close_trade(client, 1, partial_close_volume_losing, max_loss=-loss_threshold)
 
-            # For long positions, looks like you mixed up the 'long_profits' and 'short_profits' in the loop.
-            # Make sure to loop through 'long_profits' for long positions.
-            for profit in positions['long_profits']:
-                if profit > profit_threshold:
-                    print(f"Partial profit taking for long position with profit: {profit}")
-                    close_trade(client, 0, partial_close_volume_profitable, min_profit=profit_threshold)
-                elif profit < -loss_threshold:  # Again, negative threshold for losses
-                    print(f"Partial loss saving for long position with loss: {profit}")
-                    close_trade(client, 0, partial_close_volume_losing, max_loss=-loss_threshold)
 
             prev_macd = macd
             prev_signal = signal
