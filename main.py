@@ -6,7 +6,7 @@ import datetime
 
 from fetch_data import get_last_period_prices, get_current_positions, seconds_until_next_minute
 from file_ops import write_to_csv
-from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap
+from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap, calculate_sma
 from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
@@ -14,6 +14,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
     # Global Variables
     trade_just_opened = False
 
+    # userId = "15655903"
     userId = os.environ.get("XTB_USERID")
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)

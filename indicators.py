@@ -53,12 +53,17 @@ def calculate_vwap(prices, volume_data):
     vwap = np.sum(np.array(prices) * np.array(volume_data)) / np.sum(volume_data)
     return vwap
 
-def calculate_bollinger_bands(prices, window_size=20, num_std_dev=2):
-    rolling_mean = np.mean(prices[-window_size:])
-    rolling_std = np.std(prices[-window_size:])
-    upper_band = rolling_mean + (rolling_std * num_std_dev)
-    lower_band = rolling_mean - (rolling_std * num_std_dev)
-    return upper_band, lower_band
+def calculate_sma(prices, period=20):
+    if len(prices) < period:
+        return None  # Not enough data
+    return sum(prices[-period:]) / period
+
+def calculate_bollinger_bands(prices, period=20):
+    sma = sum(prices[-period:]) / period
+    standard_deviation = (sum([(price - sma) ** 2 for price in prices[-period:]]) / period) ** 0.5
+    upper_band = sma + (standard_deviation * 2)
+    lower_band = sma - (standard_deviation * 2)
+    return upper_band, sma, lower_band
 
 def calculate_rsi(df, window=15):
     """Calculate RSI for a given DataFrame and window period."""
