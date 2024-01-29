@@ -10,11 +10,10 @@ from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_v
 from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
-def buy_and_sell(symbol="US500", volume=0.08):
+def buy_and_sell(symbol="US500"):
     # Global Variables
     trade_just_opened = False
 
-    # userId = "15655903"
     userId = os.environ.get("XTB_USERID")
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)
@@ -24,9 +23,11 @@ def buy_and_sell(symbol="US500", volume=0.08):
     prev_macd, prev_signal, prev_histogram, prev_prev_histogram = None, None, None, None
     crossover_threshold, atr_threshold = 0.1, 1
     attempts, wait_time, retry_attempts = 0, 60, 3
-    profit_threshold = 20  # For partial profit-taking
+    profit_threshold = 15  # For partial profit-taking
+    second_profit_threshold = 40
     loss_threshold = 40
     partial_close_volume_profitable = 0.02
+    second_partial_close_volume_profitable = 0.04
     partial_close_volume_crossover = 0.01
     partial_close_volume_losing = 0.01
 
@@ -41,6 +42,21 @@ def buy_and_sell(symbol="US500", volume=0.08):
             atr_value = calculate_atr(highs, lows, prices)
             vwap = calculate_vwap(prices[-60:], volume_data[-60:])
             positions = get_current_positions(client)
+            sma = calculate_sma(prices, period=20)
+
+            # Determine volume based on SMA for MACD crossover
+            volume = 0.08  # Default volume
+
+            if prev_macd is not None and prev_signal is not None and prev_histogram is not None:
+                # Bullish Crossover: Enter trade if below SMA, reduce volume if above SMA
+                if prev_macd < prev_signal and macd > signal:
+                    if latest_close > sma - 1:
+                        volume = 0.04  # Decrease volume if price is above SMA by more than 1 unit
+
+                # Bearish Crossover: Enter trade if above SMA, reduce volume if below SMA
+                elif prev_macd > prev_signal and macd < signal:
+                    if latest_close < sma + 1:
+                        volume = 0.04  # Decrease volume if price is below SMA by more than 1 unit
 
             # Print statements to understand histogram direction and position
             if prev_histogram is not None:
@@ -56,8 +72,15 @@ def buy_and_sell(symbol="US500", volume=0.08):
                 else:
                     print("Histogram is below zero")
 
+            if latest_close > (sma + 1):
+                print("Price higher than SMA + 1")
+            elif latest_close < (sma - 1):
+                print("Price lower than SMA - 1")
+            else:
+                print("Price close to SMA")
+
             log_data = [datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), latest_open, latest_close,
-                        macd, signal, vwap, atr_value]
+                        macd, signal, sma, atr_value]
             write_to_csv(log_data)
 
             print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
@@ -67,7 +90,7 @@ def buy_and_sell(symbol="US500", volume=0.08):
             print(f"Signal Line: {signal}")
             print((f"Histogram: {histogram}, previous histogram: {prev_histogram}"))
             print(f"ATR: {atr_value}")
-            print(f"VWAP: {vwap}")
+            print(f"SMA: {sma}")
             print(f"Number of open long positions: {positions['long_count']}")
             print(f"Number of open short positions: {positions['short_count']}")
             print("-" * 40)
@@ -140,23 +163,27 @@ def buy_and_sell(symbol="US500", volume=0.08):
             #             close_trade(client, 1, 0.01)  # Closing short position
 
             for profit in positions['long_profits']:
-                if profit > profit_threshold:
+                if profit > second_profit_threshold:
+                    print(f"Partial profit taking for long position with profit: {profit}")
+                    close_trade(client, 0, second_partial_close_volume_profitable, min_profit=second_profit_threshold)
+                elif profit > profit_threshold:
                     print(f"Partial profit taking for long position with profit: {profit}")
                     close_trade(client, 0, partial_close_volume_profitable, min_profit=profit_threshold)
                 elif profit < -loss_threshold:  # Notice the condition change here
                     print(f"Partial loss saving for long position with loss: {profit}")
                     close_trade(client, 0, partial_close_volume_losing, max_loss=-loss_threshold)
 
-
             # For short positions
             for profit in positions['short_profits']:
-                if profit > profit_threshold:
+                if profit > second_profit_threshold:
+                    print(f"Partial profit taking for short position with profit: {profit}")
+                    close_trade(client, 1, second_partial_close_volume_profitable, min_profit=second_profit_threshold)
+                elif profit > profit_threshold:
                     print(f"Partial profit taking for short position with profit: {profit}")
                     close_trade(client, 1, partial_close_volume_profitable, min_profit=profit_threshold)
                 elif profit < -loss_threshold:  # Use a consistent negative threshold for losses
                     print(f"Partial loss saving for short position with loss: {profit}")
                     close_trade(client, 1, partial_close_volume_losing, max_loss=-loss_threshold)
-
 
             prev_macd = macd
             prev_signal = signal
