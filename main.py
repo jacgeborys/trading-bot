@@ -26,8 +26,8 @@ def buy_and_sell(symbol="US500"):
     profit_threshold = 15  # For partial profit-taking
     second_profit_threshold = 40
     loss_threshold = 40
-    partial_close_volume_profitable = 0.02
-    second_partial_close_volume_profitable = 0.04
+    partial_close_volume_profitable = 0.01
+    second_partial_close_volume_profitable = 0.02
     partial_close_volume_crossover = 0.01
     partial_close_volume_losing = 0.01
 
@@ -35,6 +35,7 @@ def buy_and_sell(symbol="US500"):
 
     while True:
         try:
+            print("-" * 50)
 
             # Fetch and prepare data
             prices, latest_open, latest_close, highs, lows, volume_data = get_last_period_prices(client, symbol, period=1)
@@ -48,12 +49,12 @@ def buy_and_sell(symbol="US500"):
             volume = 0.08  # Default volume
 
             if prev_macd is not None and prev_signal is not None and prev_histogram is not None:
-                # Bullish Crossover: Enter trade if below SMA, reduce volume if above SMA
+                # Bullish Crossover: Enter trade if low below SMA, reduce volume if above SMA - 1
                 if prev_macd < prev_signal and macd > signal:
                     if latest_close > sma - 1:
                         volume = 0.04  # Decrease volume if price is above SMA by more than 1 unit
 
-                # Bearish Crossover: Enter trade if above SMA, reduce volume if below SMA
+                # Bearish Crossover: Enter trade if high above SMA, reduce volume if below SMA + 1
                 elif prev_macd > prev_signal and macd < signal:
                     if latest_close < sma + 1:
                         volume = 0.04  # Decrease volume if price is below SMA by more than 1 unit
@@ -83,6 +84,7 @@ def buy_and_sell(symbol="US500"):
                         macd, signal, sma, atr_value]
             write_to_csv(log_data)
 
+            print("-" * 10)
             print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
             print(f"Opening Price: {latest_open}")
             print(f"Closing Price: {latest_close}")
@@ -93,7 +95,7 @@ def buy_and_sell(symbol="US500"):
             print(f"SMA: {sma}")
             print(f"Number of open long positions: {positions['long_count']}")
             print(f"Number of open short positions: {positions['short_count']}")
-            print("-" * 40)
+            print("-" * 10)
 
             # MACD-based logic
             if prev_macd is not None and prev_signal is not None and prev_histogram is not None:
