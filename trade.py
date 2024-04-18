@@ -70,7 +70,7 @@ def close_all_trades(client):
             "command": "tradeTransaction",
             "arguments": {
                 "tradeTransInfo": {
-                    # "cmd": 0,  # Assuming you are buying to close (adjust as per your need)
+                    "cmd": 0,  # Assuming you are buying to close (adjust as per your need)
                     "type": 2,  # Close order
                     "price": close_price,
                     "sl": 0.0,
