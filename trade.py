@@ -7,12 +7,11 @@ import math
 import csv
 import datetime
 
-def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
+def open_trade(client, symbol, volume, tp_value=0.0, sl_value=0.0):
     global trade_opened
 
     trade_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    offset = int(10 * offset)
     tp_value = round(tp_value, 1)
     sl_value = round(sl_value, 1)
 
@@ -22,17 +21,18 @@ def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
         cmd_value = 1  # SELL
         volume = abs(volume)
 
+    # Debugging statements to check the tp and sl values
+    print(f"Debug: Trading operation being attempted at {trade_time}")
+    print(f"Debug: TP: {tp_value}, SL: {sl_value}, Volume: {volume}, Cmd: {cmd_value}")
+
     trade_info = {
         "cmd": cmd_value,
-        "customComment": "Trading based on MA crossover",  # An example custom comment
-        "expiration": 0,  # If you're not using pending orders, you can set this to 0
-        # "offset": offset,
-        "order": 0,  # 0 for opening new trades
-        "price": 1,  # Assuming market order, otherwise provide a price
+        "customComment": "Trading based on MA crossover",
+        "price": 1.0,
         "sl": sl_value,
         "symbol": symbol,
         "tp": tp_value,
-        "type": 0,  # Since we're opening a new order
+        "type": 0,
         "volume": volume
     }
 
@@ -47,7 +47,7 @@ def open_trade(client, symbol, volume, offset, tp_value = 0.0, sl_value = 0.0):
     return {
         "trade_time": trade_time,
         "response": response
-        }
+    }
 
 def close_all_trades(client):
     # Get all open trades
@@ -70,11 +70,8 @@ def close_all_trades(client):
             "command": "tradeTransaction",
             "arguments": {
                 "tradeTransInfo": {
-                    "cmd": 0,  # Assuming you are buying to close (adjust as per your need)
                     "type": 2,  # Close order
                     "price": close_price,
-                    "sl": 0.0,
-                    "tp": 0.0,
                     "symbol": symbol,
                     "volume": volume,
                     "order": order,
@@ -91,7 +88,10 @@ def close_all_trades(client):
         else:
             print(f"Failed to close trade with order ID {order}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
 
+
 def close_trade(client, position_type, volume_per_trade, min_profit=None, max_loss=None):
+    print(
+        f"Attempting to close trade: Type {position_type}, Volume {volume_per_trade}, Min Profit {min_profit}, Max Loss {max_loss}")
     trades_response = client.execute({"command": "getTrades", "arguments": {"openedOnly": True}})
     trades = trades_response.get("returnData", [])
 
@@ -106,7 +106,7 @@ def close_trade(client, position_type, volume_per_trade, min_profit=None, max_lo
             trade_volume = trade["volume"]
             symbol = trade["symbol"]
             order = trade["order"]
-            trade_profit = trade.get("profit", 0)  # Default to 0 if None
+            trade_profit = trade.get("profit", 0)
 
             should_close = False
             if min_profit is not None and trade_profit >= min_profit:
@@ -119,34 +119,21 @@ def close_trade(client, position_type, volume_per_trade, min_profit=None, max_lo
                     "command": "tradeTransaction",
                     "arguments": {
                         "tradeTransInfo": {
-                            "type": 2,
-                            "price": 1.0,
-                            "sl": 0.0,
-                            "tp": 0.0,
-                            "symbol": symbol,
-                            "volume": volume_per_trade,
+                            "type": 2,  # Always 2 for closing
                             "order": order,
-                            "customComment": f"Partially closing {volume_per_trade} of {symbol} Trade"
+                            "price": 1.0,  # Placeholder value greater than 0
+                            "symbol": symbol,
+                            "volume": volume_per_trade
                         }
                     }
                 }
                 response = client.execute(payload)
                 close_responses.append(response)
-            elif not should_close:
-                continue
             else:
-                print(f"Trade volume {trade_volume} is less than the close volume {volume_per_trade}.")
-                close_responses.append(f"Trade volume {trade_volume} too small to close {volume_per_trade}.")
+                print(f"Conditions not met to close trade: {trade}")
 
     if not close_responses:
         print("No trades were closed.")
         return "No matching trades were closed"
 
     return close_responses
-
-
-
-
-
-
-
