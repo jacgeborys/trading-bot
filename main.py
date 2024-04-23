@@ -75,12 +75,13 @@ class TradingBot:
     def open_position(self, position_type):
         volume = self.volume
         atr_value = self.atr_value  # Use the ATR value computed during data fetch
+        offset = math.ceil(1 * atr_value)
         tp_value = (self.latest_close + 1.5 * atr_value) if position_type == 'long' else (self.latest_close - 1.5 * atr_value)
         sl_value = (self.latest_close - 2 * atr_value) if position_type == 'long' else (self.latest_close + 2 * atr_value)
         trade_direction = volume if position_type == 'long' else -volume
 
         time.sleep(2)  # Wait for 2 seconds before sending the trade request
-        open_trade(self.client, self.symbol, trade_direction, tp_value, sl_value)
+        open_trade(self.client, self.symbol, trade_direction, offset, tp_value, sl_value)
         print(f"Opening {position_type} position with volume {volume}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
 
         # Record the action

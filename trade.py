@@ -7,11 +7,12 @@ import math
 import csv
 import datetime
 
-def open_trade(client, symbol, volume, tp_value=0.0, sl_value=0.0):
+def open_trade(client, symbol, volume, offset, tp_value=0.0, sl_value=0.0):
     global trade_opened
 
     trade_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+    offset = int(10 * offset)
     tp_value = round(tp_value, 1)
     sl_value = round(sl_value, 1)
 
@@ -28,6 +29,7 @@ def open_trade(client, symbol, volume, tp_value=0.0, sl_value=0.0):
     trade_info = {
         "cmd": cmd_value,
         "customComment": "Trading based on MA crossover",
+        "offset": offset,
         "price": 1.0,
         "sl": sl_value,
         "symbol": symbol,
