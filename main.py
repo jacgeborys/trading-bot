@@ -12,7 +12,7 @@ from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
 class TradingBot:
-    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=15, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.02):
+    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=15, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.03):
         self.volume = volume
         self.client = client
         self.symbol = symbol
@@ -28,17 +28,21 @@ class TradingBot:
         self.prev_histogram = None
         self.prev_prev_histogram = None
         self.trade_just_opened = False
-        self.prices, self.latest_open, self.latest_close, self.highs, self.lows, self.volume_data = self.fetch_and_prepare_data()
+        self.prices, self.latest_open, self.latest_close, self.highs, self.lows, self.volume_data, self.positions = self.fetch_and_prepare_data()
 
     def fetch_and_prepare_data(self):
-        prices, latest_open, latest_close, highs, lows, volume_data = get_last_period_prices(self.client, self.symbol, period=1)
+        response = get_last_period_prices(self.client, self.symbol, period=1)
+        if not response or len(response) != 6:
+            print("Failed to fetch complete data or received incorrect data format.")
+            return None, None, None, None, None, None  # Return None for each expected value
+
+        prices, latest_open, latest_close, highs, lows, volume_data = response
         macd, signal, histogram = calculate_macd(prices)
-        atr_value = calculate_atr(highs, lows, prices)  # Using stored highs, lows, and prices
+        atr_value = calculate_atr(highs, lows, prices)
         vwap = calculate_vwap(prices[-60:], volume_data[-60:])
         positions = get_current_positions(self.client)
         sma = calculate_sma(prices, period=20)
 
-        # Store necessary data for later use
         self.macd = macd
         self.signal = signal
         self.histogram = histogram
@@ -49,16 +53,21 @@ class TradingBot:
         self.latest_open = latest_open
         self.latest_close = latest_close
 
-        return prices, latest_open, latest_close, highs, lows, volume_data
+        return prices, latest_open, latest_close, highs, lows, volume_data, positions
 
     def open_position(self, position_type):
         volume = self.volume
         atr_value = self.atr_value  # Use the ATR value computed during data fetch
-        tp_value = (self.latest_close + 0.8 * atr_value) if position_type == 'long' else (self.latest_close - 0.8 * atr_value)
-        sl_value = (self.latest_close - 3 * atr_value) if position_type == 'long' else (self.latest_close + 3 * atr_value)
+        tp_value = (self.latest_close + 0.8 * atr_value) if position_type == 'long' else (
+                    self.latest_close - 0.8 * atr_value)
+        sl_value = (self.latest_close - 3 * atr_value) if position_type == 'long' else (
+                    self.latest_close + 3 * atr_value)
         trade_direction = volume if position_type == 'long' else -volume
+
+        time.sleep(2)  # Wait for 2 seconds before sending the trade request
         open_trade(self.client, self.symbol, trade_direction, tp_value, sl_value)
-        print(f"Opening {position_type} position with volume {volume}, TP: {tp_value}, SL: {sl_value}")
+        print(
+            f"Opening {position_type} position with volume {volume}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
 
     def get_macd_status(self, period):
         """Fetch prices for the specified period and determine if MACD is bullish or bearish."""
@@ -70,16 +79,29 @@ class TradingBot:
         last_trade_time = datetime.min
         while True:
             try:
-                self.fetch_and_prepare_data()
-                current_time = datetime.now()
-                print(f"Checking conditions at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                print(
-                    f"Latest Close: {round(self.latest_close, 2)}")  # Ensure the latest close is printed after data is fetched
-                print(f"ATR: {round(self.atr_value, 2)}, VWAP: {round(self.vwap, 2)}, SMA: {round(self.sma, 2)}")
-                print(
-                    f"MACD: {round(self.macd, 2)}, Signal: {round(self.signal, 2)}, Histogram: {round(self.histogram, 2)}")
+                response = self.fetch_and_prepare_data()
+                if response is None:
+                    print("Waiting before the next data request due to previous failure...")
+                    time.sleep(2)  # Wait a bit longer if the data fetch failed
+                    continue
 
-                if (current_time - last_trade_time).total_seconds() >= 120:
+                current_time = datetime.now()
+                print("-" * 50)
+                print(f"Checking conditions at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"Latest Close: {round(self.latest_close, 2) if self.latest_close else 'Data Unavailable'}")
+                print(
+                    f"ATR: {round(self.atr_value, 2) if self.atr_value else 'Data Unavailable'}, VWAP: {round(self.vwap, 2) if self.vwap else 'Data Unavailable'}, SMA: {round(self.sma, 2) if self.sma else 'Data Unavailable'}")
+                print(
+                    f"MACD: {round(self.macd, 2) if self.macd else 'Data Unavailable'}, Signal: {round(self.signal, 2) if self.signal else 'Data Unavailable'}, Histogram: {round(self.histogram, 2) if self.histogram else 'Data Unavailable'}")
+
+                # Print current open positions
+                if self.positions:
+                    print(
+                        f"Open long positions: {self.positions['long_count']}, Open short positions: {self.positions['short_count']}")
+                    print(
+                        f"Long profits: {self.positions['long_profits']}, Short profits: {self.positions['short_profits']}")
+
+                if (current_time - last_trade_time).total_seconds() >= 119:
                     macd_status_1m = self.get_macd_status(1)
                     macd_status_5m = self.get_macd_status(5)
                     print(f"MACD Status 1m: {macd_status_1m}, MACD Status 5m: {macd_status_5m}")
@@ -103,6 +125,7 @@ class TradingBot:
                 print(f"An unexpected error occurred: {str(e)}")
                 traceback.print_exc()
                 break
+
 
 # Main execution logic
 if __name__ == "__main__":
