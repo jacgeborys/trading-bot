@@ -65,22 +65,16 @@ def calculate_bollinger_bands(prices, period=20):
     lower_band = sma - (standard_deviation * 2)
     return upper_band, sma, lower_band
 
-def calculate_rsi(df, window=15):
-    """Calculate RSI for a given DataFrame and window period."""
-    # Calculate the difference between consecutive prices
-    delta = df['close'].diff().dropna()
+def calculate_rsi(prices, window=14):
+    df = pd.DataFrame(prices, columns=['close'])
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
 
-    # Separate the up and down gains
-    up, down = delta.copy(), delta.copy()
-    up[up < 0] = 0
-    down[down > 0] = 0
+    avg_gain = gain.rolling(window=window, min_periods=1).mean()
+    avg_loss = loss.rolling(window=window, min_periods=1).mean()
 
-    # Calculate the EWMA (Exponential Weighted Moving Average) of up and down gains
-    roll_up = up.ewm(span=window).mean()
-    roll_down = down.abs().ewm(span=window).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.iloc[-1]  # Return only the last item, which is the most recent RSI value
 
-    # Calculate the RSI
-    RS = roll_up / roll_down
-    RSI = 100.0 - (100.0 / (1.0 + RS))
-
-    return RSI
