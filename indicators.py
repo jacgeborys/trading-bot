@@ -7,7 +7,7 @@ import math
 import csv
 import datetime
 
-def calculate_atr(highs, lows, closes, period=14):
+def calculate_atr(highs, lows, closes, period=5):
     """
     Calculate Average True Range (ATR) based on highs, lows, and closes.
     """
@@ -77,4 +77,27 @@ def calculate_rsi(prices, window=14):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi.iloc[-1]  # Return only the last item, which is the most recent RSI value
+
+
+def calculate_adl(highs, lows, closes, volumes):
+    """
+    Calculate the Accumulation/Distribution Line using high, low, close prices and volume.
+    """
+    df = pd.DataFrame({'High': highs, 'Low': lows, 'Close': closes, 'Volume': volumes})
+    mfm = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / (df['High'] - df['Low'])
+    mfv = mfm * df['Volume']
+    adl = mfv.cumsum()
+    return adl.iloc[-1]
+
+def calculate_obv(closes, volumes):
+    obv = [0]  # Starting the OBV from zero for the first day
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i - 1]:
+            obv.append(obv[-1] + volumes[i])
+        elif closes[i] < closes[i - 1]:
+            obv.append(obv[-1] - volumes[i])
+        else:
+            obv.append(obv[-1])
+    return obv
+
 

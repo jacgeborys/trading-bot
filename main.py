@@ -8,12 +8,12 @@ import pandas as pd
 
 from fetch_data import get_last_period_prices, get_current_positions, seconds_until_next_minute
 from file_ops import write_to_csv
-from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap, calculate_sma
+from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap, calculate_sma, calculate_adl, calculate_obv
 from login import login_to_xtb
 from trade import open_trade, close_all_trades, close_trade
 
 class TradingBot:
-    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=15, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.03):
+    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=15, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.01):
         self.volume = volume
         self.client = client
         self.symbol = symbol
@@ -41,15 +41,18 @@ class TradingBot:
             return None, None, None, None, None, None  # Return None for each expected value
 
         prices, latest_open, latest_close, highs, lows, volume_data = response
-        macd, signal, histogram = calculate_macd(prices)
 
-        # Fetch 5-minute data
+        # Call your volume indicators with correct data
+        vwap = calculate_vwap(prices, volume_data)
+        adl = calculate_adl(highs, lows, prices, volume_data)  # Adjusted prices -> closes
+        obv = calculate_obv(prices, volume_data)  # Adjusted prices -> closes
+
+        # MACD calculations
+        macd, signal, histogram = calculate_macd(prices)
         prices_5m, _, _, _, _, _ = get_last_period_prices(self.client, self.symbol, period=5)
-        macd_5m, signal_5m, _ = calculate_macd(prices_5m)
+        macd_5m, signal_5m, histogram_5m = calculate_macd(prices_5m)
 
         atr_value = calculate_atr(highs, lows, prices)
-        vwap = calculate_vwap(prices[-60:], volume_data[-60:])
-        positions = get_current_positions(self.client)
         sma = calculate_sma(prices, period=20)
 
         # Convert prices list to a DataFrame for RSI calculation
@@ -62,22 +65,25 @@ class TradingBot:
         self.histogram = histogram
         self.macd_5m = macd_5m
         self.signal_5m = signal_5m
+        self.histogram_5m = histogram_5m
         self.atr_value = atr_value
         self.vwap = vwap
-        self.positions = positions
+        self.positions = get_current_positions(self.client)
         self.sma = sma
         self.latest_open = latest_open
         self.latest_close = latest_close
         self.rsi = rsi  # Save RSI to be used later
+        self.adl = adl
+        self.obv = obv
 
-        return prices, latest_open, latest_close, highs, lows, volume_data, positions
+        return prices, latest_open, latest_close, highs, lows, volume_data, self.positions
 
     def open_position(self, position_type):
         volume = self.volume
         atr_value = self.atr_value  # Use the ATR value computed during data fetch
-        offset = math.ceil(1 * atr_value)
-        tp_value = (self.latest_close + 1.5 * atr_value) if position_type == 'long' else (self.latest_close - 1.5 * atr_value)
-        sl_value = (self.latest_close - 2 * atr_value) if position_type == 'long' else (self.latest_close + 2 * atr_value)
+        offset = math.ceil(0.8 * atr_value)
+        tp_value = (self.latest_close + 3 * atr_value) if position_type == 'long' else (self.latest_close - 3 * atr_value)
+        sl_value = (self.latest_close - 5 * atr_value) if position_type == 'long' else (self.latest_close + 5 * atr_value)
         trade_direction = volume if position_type == 'long' else -volume
 
         time.sleep(2)  # Wait for 2 seconds before sending the trade request
@@ -87,20 +93,28 @@ class TradingBot:
         # Record the action
         self.last_trade_action = f"{position_type.capitalize()} Opened"
 
-
     def log_data(self, current_time):
+        # Calculate additional indicators
+        adl = calculate_adl(self.highs, self.lows, [self.latest_close] * len(self.highs), self.volume_data)
+        obv = calculate_obv([self.latest_close] * len(self.highs), self.volume_data)
+        last_obv = self.obv[-1] if self.obv else 0
+        vwap = calculate_vwap([self.latest_close] * len(self.highs), self.volume_data)
+
         data = {
             'Time': current_time.strftime('%Y-%m-%d %H:%M:%S'),
             'Latest Close': round(self.latest_close, 2),
             'ATR': round(self.atr_value, 2),
-            'VWAP': round(self.vwap, 2),
+            'VWAP': round(vwap, 2),
             'SMA': round(self.sma, 2),
-            'RSI': round(self.rsi, 2),  # Corrected to 'RSI'
+            'RSI': round(self.rsi, 2),
             'MACD': round(self.macd, 2),
             'Signal': round(self.signal, 2),
             'Histogram': round(self.histogram, 2),
             'MACD 5m': round(self.macd_5m, 2),
             'Signal 5m': round(self.signal_5m, 2),
+            'Histogram 5m': round(self.histogram_5m, 2),
+            'ADL': round(adl, 2),
+            'OBV': round(last_obv, 2),
             'Long Positions': self.positions['long_count'],
             'Short Positions': self.positions['short_count'],
             'Long Profits': self.positions['long_profits'],
@@ -110,7 +124,8 @@ class TradingBot:
         new_entry = pd.DataFrame([data])
         self.data_log = pd.concat([self.data_log, new_entry], ignore_index=True)
         if len(self.data_log) % 5 == 0:
-            self.data_log.to_csv('C:/Users/Asus/OneDrive/Pulpit/Rozne/Python/XTB/_script/excel/trading_log.csv', index=False)
+            self.data_log.to_csv('C:/Users/Asus/OneDrive/Pulpit/Rozne/Python/XTB/_script/excel/trading_log.csv',
+                                 index=False)
             print("Data log saved to Excel.")
 
     def run(self):
@@ -130,22 +145,22 @@ class TradingBot:
                 print(f"Latest Close: {round(self.latest_close, 2) if self.latest_close else 'Data Unavailable'}")
                 print(f"ATR: {round(self.atr_value, 2) if self.atr_value else 'Data Unavailable'}, VWAP: {round(self.vwap, 2) if self.vwap else 'Data Unavailable'}, SMA: {round(self.sma, 2) if self.sma else 'Data Unavailable'}, RSI: {round(self.rsi, 2) if self.rsi else 'Data Unavailable'}")
                 print(f"MACD: {round(self.macd, 2) if self.macd else 'Data Unavailable'}, Signal: {round(self.signal, 2) if self.signal else 'Data Unavailable'}, Histogram: {round(self.histogram, 2) if self.histogram else 'Data Unavailable'}")
-                print(f"MACD 5m: {round(self.macd_5m, 2) if self.macd_5m else 'Data Unavailable'}, Signal 5m: {round(self.signal_5m, 2) if self.signal_5m else 'Data Unavailable'}")
+                print(f"MACD 5m: {round(self.macd_5m, 2) if self.macd_5m else 'Data Unavailable'}, Signal 5m: {round(self.signal_5m, 2) if self.signal_5m else 'Data Unavailable'}, Histogram 5m: {round(self.histogram_5m, 2) if self.histogram_5m else 'Data Unavailable'}")
 
                 # Print current open positions
                 if self.positions:
                     print(f"Open long positions: {self.positions['long_count']}, Open short positions: {self.positions['short_count']}")
                     print(f"Long profits: {self.positions['long_profits']}, Short profits: {self.positions['short_profits']}")
 
-                if (current_time - last_trade_time).total_seconds() >= 59:
+                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 2.4:
                     macd_status_1m = "bullish" if self.macd > self.signal else "bearish"
                     macd_status_5m = "bullish" if self.macd_5m > self.signal_5m else "bearish"
                     print(f"MACD Status 1m: {macd_status_1m}, MACD Status 5m: {macd_status_5m}")
 
-                    if macd_status_1m == "bullish" and macd_status_5m == "bullish":
+                    if macd_status_1m == "bullish": # and macd_status_5m == "bullish":
                         self.open_position('long')
                         print("Opened a long position.")
-                    elif macd_status_1m == "bearish" and macd_status_5m == "bearish":
+                    elif macd_status_1m == "bearish": # and macd_status_5m == "bearish":
                         self.open_position('short')
                         print("Opened a short position.")
                     else:
