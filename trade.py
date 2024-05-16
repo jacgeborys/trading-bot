@@ -7,35 +7,58 @@ import math
 import csv
 import datetime
 
-def open_trade(client, symbol, volume, offset, tp_value=0.0, sl_value=0.0):
+def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0, sl_value=0.0, order_type='market'):
+    """
+    Open a trade with specified parameters, supporting both market and pending orders.
+
+    :param client: Trading client.
+    :param symbol: Trading symbol (e.g., 'EURUSD').
+    :param volume: Amount of the asset to trade (positive for buy, negative for sell).
+    :param price: Entry price for pending orders.
+    :param latest_close: The latest close price to determine the order type.
+    :param offset: Price offset for setting tp and sl values more accurately.
+    :param tp_value: Take profit value.
+    :param sl_value: Stop loss value.
+    :param order_type: 'market' for market orders, 'pending' for pending orders.
+    """
     global trade_opened
+    trade_time = datetime.datetime.now()
+    formatted_trade_time = trade_time.strftime('%Y-%m-%d %H:%M:%S')
 
-    trade_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
+    # Calculate offset for stop loss and take profit
     offset = int(10 * offset)
     tp_value = round(tp_value, 1)
     sl_value = round(sl_value, 1)
 
-    if volume > 0:
-        cmd_value = 0  # BUY
-    else:
-        cmd_value = 1  # SELL
-        volume = abs(volume)
+    # Determine the command value based on the type of order and volume sign
+    if order_type == 'market':
+        cmd_value = 0 if volume > 0 else 1
+    elif order_type == 'pending':
+        if volume > 0:  # This is a buy order
+            cmd_value = 4 if price > latest_close else 2  # Buy Stop if price is above latest close else Buy Limit
+        else:  # This is a sell order
+            cmd_value = 5 if price < latest_close else 3  # Sell Stop if price is below latest close else Sell Limit
+        expiration_time = trade_time + datetime.timedelta(minutes=5)  # Set expiration time to 5 minutes from now
+        expiration = int(expiration_time.timestamp() * 1000)  # Convert to milliseconds
+
+    volume = abs(volume)  # Volume should always be a positive number
 
     # Debugging statements to check the tp and sl values
-    print(f"Debug: Trading operation being attempted at {trade_time}")
-    print(f"Debug: TP: {tp_value}, SL: {sl_value}, Volume: {volume}, Cmd: {cmd_value}")
+    print(f"Debug: Trading operation being attempted at {formatted_trade_time}")
+    print(f"Debug: TP: {tp_value}, SL: {sl_value}, Offset: {offset}, Volume: {volume}, Cmd: {cmd_value}, Order Type: {order_type}")
 
+    # Trade transaction information
     trade_info = {
         "cmd": cmd_value,
         "customComment": "Trading based on MA crossover",
         "offset": offset,
-        "price": 1.0,
+        "price": price,  # Use price for both market and pending types if needed
         "sl": sl_value,
         "symbol": symbol,
         "tp": tp_value,
-        "type": 0,
-        "volume": volume
+        "type": 0,  # Type for order execution, adjust if needed by API
+        "volume": volume,
+        "expiration": expiration if order_type == 'pending' else 0  # Set expiration only for pending orders
     }
 
     request = {
@@ -47,9 +70,10 @@ def open_trade(client, symbol, volume, offset, tp_value=0.0, sl_value=0.0):
 
     response = client.execute(request)
     return {
-        "trade_time": trade_time,
+        "trade_time": formatted_trade_time,
         "response": response
     }
+
 
 def close_all_trades(client):
     # Get all open trades

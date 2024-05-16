@@ -303,7 +303,7 @@ def procNewsExample(msg):
 def main():
 
     # enter your login credentials here
-    userId = 15128874
+    userId = os.environ.get("XTB_USERID")
     password=os.environ.get("XTB_PASSWORD")
 
     # create & connect to RR socket
