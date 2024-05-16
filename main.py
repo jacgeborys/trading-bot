@@ -26,10 +26,7 @@ class TradingBot:
         self.loss_threshold = loss_threshold
         self.partial_close_volume_profitable = partial_close_volume_profitable
         self.partial_close_volume_losing = partial_close_volume_losing
-        self.prev_macd = None
-        self.prev_signal = None
         self.prev_histogram = None
-        self.prev_prev_histogram = None
         self.trade_just_opened = False
         self.last_trade_action = 'None'  # Initialize the last trade action
         self.data_log = pd.DataFrame()  # Initialize DataFrame for logging
@@ -90,8 +87,8 @@ class TradingBot:
                         self.latest_close - atr_value)
 
         # Calculate TP and SL based on the entry price for more accurate order setup
-        tp_value = (entry_price + 5.0 * atr_value + 0.5) if position_type == 'long' else (entry_price - 5.0 * atr_value - 0.5)
-        sl_value = (entry_price - 6.0 * atr_value) if position_type == 'long' else (entry_price + 6.0 * atr_value)
+        tp_value = (entry_price + 2.0 * atr_value + 0.5) if position_type == 'long' else (entry_price - 2.0 * atr_value - 0.5)
+        sl_value = (entry_price - 1.0 * atr_value) if position_type == 'long' else (entry_price + 1.0 * atr_value)
         trade_direction = volume if position_type == 'long' else -volume
 
         time.sleep(2)  # Wait for 2 seconds before sending the trade request
@@ -154,23 +151,28 @@ class TradingBot:
                 print(f"ATR: {round(self.atr_value, 2) if self.atr_value else 'Data Unavailable'}")
                 print(f"Histogram: {round(self.histogram, 2) if self.histogram else 'Data Unavailable'}")
 
-                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1 and abs(
-                        self.histogram) > 0.2:
-                    macd_status_1m = "bullish" if self.macd > self.signal else "bearish"
-                    print(f"MACD Status 1m: {macd_status_1m}")
-
-                    if macd_status_1m == "bullish":
-                        entry_price = self.latest_close + 0.6 * self.atr_value
-                        entry_price = round(entry_price, 1)
-                        self.open_position('long', 'pending', entry_price)
-                        print(f"Set long pending order at price {entry_price}.")
-                    elif macd_status_1m == "bearish":
-                        entry_price = self.latest_close - 0.6 * self.atr_value
-                        entry_price = round(entry_price, 1)
-                        self.open_position('short', 'pending', entry_price)
-                        print(f"Set short pending order at price {entry_price}.")
+                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1 and abs(self.histogram) > 0.2:
+                    # Determine if histogram is increasing or decreasing
+                    if self.prev_histogram is not None:
+                        if self.histogram > (self.prev_histogram + 0.01):
+                            print("Histogram is increasing.")
+                            entry_price = self.latest_close + 1 * self.atr_value
+                            entry_price = round(entry_price, 1)
+                            self.open_position('long', 'pending', entry_price)
+                            print(f"Set long pending order at price {entry_price}.")
+                        elif self.histogram < (self.prev_histogram - 0.01):
+                            print("Histogram is decreasing.")
+                            entry_price = self.latest_close - 1 * self.atr_value
+                            entry_price = round(entry_price, 1)
+                            self.open_position('short', 'pending', entry_price)
+                            print(f"Set short pending order at price {entry_price}.")
+                        else:
+                            print("No significant change in histogram. No trade executed.")
                     else:
-                        print("No trade executed. Conditions not met.")
+                        print("Previous histogram value is None. No trade executed.")
+
+                    # Update previous histogram value
+                    self.prev_histogram = self.histogram
 
                     self.log_data(current_time)  # Log the data to the DataFrame
                     last_trade_time = current_time
