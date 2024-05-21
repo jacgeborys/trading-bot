@@ -62,3 +62,33 @@ def seconds_until_next_minute():
     current_time = time.time()  # current time in seconds
     next_minute = math.ceil(current_time / 60) * 60  # next full minute in seconds
     return next_minute - current_time
+
+
+############################################ Historical Data ############################################
+def get_historical_data(client, symbol, period, start, end):
+    response = client.execute({
+        "command": "getChartRangeRequest",
+        "arguments": {
+            "info": {
+                "symbol": symbol,
+                "period": period,
+                "start": start,
+                "end": end
+            }
+        }
+    })
+
+    if response['status']:
+        digits = response['returnData']['digits']
+        rate_infos = response['returnData']['rateInfos']
+
+        open_prices = [bar['open'] / (10 ** digits) for bar in rate_infos]
+        close_prices = [(bar['open'] + bar['close']) / (10 ** digits) for bar in rate_infos]
+        high_prices = [open_price + (bar['high'] / (10 ** digits)) for open_price, bar in zip(open_prices, rate_infos)]
+        low_prices = [open_price + (bar['low'] / (10 ** digits)) for open_price, bar in zip(open_prices, rate_infos)]
+        volume = [bar['vol'] for bar in rate_infos]
+
+        return close_prices, open_prices, high_prices, low_prices, volume
+    else:
+        print(f"Failed to retrieve historical data. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
+        return [], [], [], [], []

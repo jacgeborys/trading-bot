@@ -76,19 +76,19 @@ class TradingBot:
     def open_position(self, position_type, order_type='market', entry_price=None):
         volume = self.volume
         atr_value = self.atr_value  # Use the ATR value computed during data fetch
-        offset = round(2.0 * atr_value, 1)
+        offset = round(1.5 * atr_value, 1)
 
         if order_type == 'market':
             # Market orders use the latest close as the entry price
             entry_price = self.latest_close
         elif order_type == 'pending' and entry_price is None:
             # For pending orders, calculate it based on the position type
-            entry_price = (self.latest_close + atr_value) if position_type == 'long' else (
-                        self.latest_close - atr_value)
+            entry_price = (self.latest_close + 1.0 * atr_value) if position_type == 'long' else (
+                        self.latest_close - 1.0 * atr_value)
 
         # Calculate TP and SL based on the entry price for more accurate order setup
-        tp_value = (entry_price + 2.0 * atr_value + 0.5) if position_type == 'long' else (entry_price - 2.0 * atr_value - 0.5)
-        sl_value = (entry_price - 1.0 * atr_value) if position_type == 'long' else (entry_price + 1.0 * atr_value)
+        tp_value = (entry_price + 1.0 * atr_value + 0.5) if position_type == 'long' else (entry_price - 1.0 * atr_value - 0.5)
+        sl_value = (entry_price - 10.0 * atr_value) if position_type == 'long' else (entry_price + 10.0 * atr_value)
         trade_direction = volume if position_type == 'long' else -volume
 
         time.sleep(2)  # Wait for 2 seconds before sending the trade request
@@ -151,7 +151,7 @@ class TradingBot:
                 print(f"ATR: {round(self.atr_value, 2) if self.atr_value else 'Data Unavailable'}")
                 print(f"Histogram: {round(self.histogram, 2) if self.histogram else 'Data Unavailable'}")
 
-                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1 and abs(self.histogram) > 0.2:
+                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1: #and abs(self.histogram) > 0.2:
                     # Determine if histogram is increasing or decreasing
                     if self.prev_histogram is not None:
                         if self.histogram > (self.prev_histogram + 0.01):
