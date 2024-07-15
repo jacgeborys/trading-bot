@@ -8,8 +8,9 @@ def calculate_atr(highs, lows, closes, period=14):
     low_close = np.abs(df['Low'] - df['Close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = ranges.max(axis=1)
-    atr = true_range.rolling(period).mean()
+    atr = true_range.rolling(window=period, min_periods=1).mean()  # Ensure at least one period is used
     return atr
+
 
 def calculate_supertrend(highs, lows, closes, atr, multiplier=3):
     highs = np.array(highs)
@@ -22,6 +23,10 @@ def calculate_supertrend(highs, lows, closes, atr, multiplier=3):
 
     supertrend = np.zeros(len(closes))
     supertrend_direction = np.zeros(len(closes))
+
+    # Initialize the first supertrend value
+    supertrend[0] = lower_band[0]
+    supertrend_direction[0] = 1 if closes[0] > upper_band[0] else -1
 
     for i in range(1, len(closes)):
         if closes[i] > upper_band[i - 1]:
@@ -39,7 +44,10 @@ def calculate_supertrend(highs, lows, closes, atr, multiplier=3):
             elif supertrend_direction[i] == -1 and closes[i] > upper_band[i]:
                 supertrend_direction[i] = 1
 
+        # print(f"Iteration {i} - Close: {closes[i]}, Supertrend: {supertrend[i]}, Direction: {supertrend_direction[i]}")
+
     return supertrend, supertrend_direction
+
 
 def calculate_ema(prices, period):
     prices_series = pd.Series(prices)

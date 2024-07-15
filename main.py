@@ -34,6 +34,7 @@ class TradingBot:
         self.prices, self.latest_open, self.latest_close, self.highs, self.lows, self.volume_data, self.positions = self.fetch_and_prepare_data()
 
     def fetch_and_prepare_data(self):
+        # Ensure you fetch enough data points for ATR calculation
         response = get_last_period_prices(self.client, self.symbol, period=1)
         if not response or len(response) != 6:
             print("Failed to fetch complete data or received incorrect data format.")
@@ -42,6 +43,11 @@ class TradingBot:
         prices, latest_open, latest_close, highs, lows, volume_data = response
 
         print(f"Fetched Data - Prices: {prices}, Highs: {highs}, Lows: {lows}, Volume: {volume_data}")
+
+        # Make sure to fetch more data points for 14-period ATR calculation
+        if len(prices) < 14 or len(highs) < 14 or len(lows) < 14:
+            print("Not enough data points for ATR calculation. Skipping this iteration.")
+            return prices, latest_open, latest_close, highs, lows, volume_data, None
 
         vwap = calculate_vwap(prices, volume_data)
         if vwap is None:
@@ -62,6 +68,8 @@ class TradingBot:
         lows = np.array(lows)
         prices = np.array(prices)
         atr_series = np.array(atr_series)
+
+        print(f"Data for Supertrend - Highs: {highs}, Lows: {lows}, Prices: {prices}, ATR: {atr_series}")
 
         supertrend, supertrend_direction = calculate_supertrend(highs, lows, prices, atr_series)
 
@@ -93,9 +101,9 @@ class TradingBot:
         if order_type == 'market':
             entry_price = self.latest_close
         elif order_type == 'pending' and entry_price is None:
-            entry_price = (self.latest_close + 1.0 * atr_value) if position_type == 'long' else (self.latest_close - 1.0 * atr_value)
+            entry_price = (self.latest_close + 1.9 * atr_value) if position_type == 'long' else (self.latest_close - 1.9 * atr_value)
 
-        tp_value = (entry_price + 4.0 * atr_value + 0.5) if position_type == 'long' else (entry_price - 4.0 * atr_value - 0.5)
+        tp_value = (entry_price + 0.7 * atr_value + 0.5) if position_type == 'long' else (entry_price - 0.7 * atr_value - 0.5)
         sl_value = (entry_price - 10.0 * atr_value) if position_type == 'long' else (entry_price + 10.0 * atr_value)
         trade_direction = volume if position_type == 'long' else -volume
 
@@ -160,7 +168,13 @@ class TradingBot:
                 print(f"Supertrend: {self.supertrend[-1]}")
                 print(f"Supertrend Direction: {self.supertrend_direction[-1]}")
 
-                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1.8:
+                # Avoid trades during consolidation periods
+                if self.supertrend_direction[-1] == 0:
+                    print("Market is in consolidation. Skipping this iteration.")
+                    time.sleep(seconds_until_next_minute() + 1)
+                    continue
+
+                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 2:
                     if self.supertrend_direction[-1] == 1:
                         entry_price = self.latest_close + 1.0 * self.atr_value
                         entry_price = round(entry_price, 1)
@@ -205,4 +219,3 @@ if __name__ == "__main__":
     if client and ssid:
         bot = TradingBot(client, "US500", 0.01, 1)
         bot.run()
-
