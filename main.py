@@ -42,8 +42,6 @@ class TradingBot:
 
         prices, latest_open, latest_close, highs, lows, volume_data = response
 
-        print(f"Fetched Data - Prices: {prices}, Highs: {highs}, Lows: {lows}, Volume: {volume_data}")
-
         # Make sure to fetch more data points for 14-period ATR calculation
         if len(prices) < 14 or len(highs) < 14 or len(lows) < 14:
             print("Not enough data points for ATR calculation. Skipping this iteration.")
@@ -68,8 +66,6 @@ class TradingBot:
         lows = np.array(lows)
         prices = np.array(prices)
         atr_series = np.array(atr_series)
-
-        print(f"Data for Supertrend - Highs: {highs}, Lows: {lows}, Prices: {prices}, ATR: {atr_series}")
 
         supertrend, supertrend_direction = calculate_supertrend(highs, lows, prices, atr_series)
 
