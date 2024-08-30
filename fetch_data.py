@@ -47,21 +47,28 @@ def get_current_positions(client):
 
     positions = {'long': False, 'short': False, 'long_count': 0, 'short_count': 0, 'long_profits': [], 'short_profits': []}
     for trade in trades:
+        trade_info = {'order': trade["order2"], 'profit': trade["profit"]}
         if trade["cmd"] == 0:  # 0 for long position
             positions['long'] = True
             positions['long_count'] += 1
-            positions['long_profits'].append(trade["profit"])
+            positions['long_profits'].append(trade_info)
         elif trade["cmd"] == 1:  # 1 for short position
             positions['short'] = True
             positions['short_count'] += 1
-            positions['short_profits'].append(trade["profit"])
+            positions['short_profits'].append(trade_info)
 
     return positions
+
 
 def seconds_until_next_minute():
     current_time = time.time()  # current time in seconds
     next_minute = math.ceil(current_time / 60) * 60  # next full minute in seconds
     return next_minute - current_time
+
+
+
+
+
 
 
 ############################################ Historical Data ############################################

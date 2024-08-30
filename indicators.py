@@ -29,22 +29,21 @@ def calculate_supertrend(highs, lows, closes, atr, multiplier=3):
     supertrend_direction[0] = 1 if closes[0] > upper_band[0] else -1
 
     for i in range(1, len(closes)):
-        if closes[i] > upper_band[i - 1]:
-            supertrend[i] = lower_band[i]
+        if supertrend_direction[i-1] == 1:
+            supertrend[i] = max(lower_band[i], supertrend[i-1])
+        else:
+            supertrend[i] = min(upper_band[i], supertrend[i-1])
+
+        if closes[i] > supertrend[i]:
             supertrend_direction[i] = 1
-        elif closes[i] < lower_band[i - 1]:
-            supertrend[i] = upper_band[i]
+        elif closes[i] < supertrend[i]:
             supertrend_direction[i] = -1
         else:
-            supertrend[i] = supertrend[i - 1]
-            supertrend_direction[i] = supertrend_direction[i - 1]
+            supertrend_direction[i] = supertrend_direction[i-1]
 
-            if supertrend_direction[i] == 1 and closes[i] < lower_band[i]:
-                supertrend_direction[i] = -1
-            elif supertrend_direction[i] == -1 and closes[i] > upper_band[i]:
-                supertrend_direction[i] = 1
-
-        # print(f"Iteration {i} - Close: {closes[i]}, Supertrend: {supertrend[i]}, Direction: {supertrend_direction[i]}")
+        # Ensure the Supertrend doesn't change too abruptly
+        if supertrend_direction[i] != supertrend_direction[i-1]:
+            supertrend[i] = supertrend[i-1]
 
     return supertrend, supertrend_direction
 

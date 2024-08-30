@@ -38,7 +38,7 @@ def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0
             cmd_value = 4 if price > latest_close else 2  # Buy Stop if price is above latest close else Buy Limit
         else:  # This is a sell order
             cmd_value = 5 if price < latest_close else 3  # Sell Stop if price is below latest close else Sell Limit
-        expiration_time = trade_time + datetime.timedelta(minutes=2)  # Set expiration time to 5 minutes from now
+        expiration_time = trade_time + datetime.timedelta(minutes=5)  # Set expiration time to 5 minutes from now
         expiration = int(expiration_time.timestamp() * 1000)  # Convert to milliseconds
 
     volume = abs(volume)  # Volume should always be a positive number
@@ -74,6 +74,35 @@ def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0
         "response": response
     }
 
+def modify_trade(client, order_id, offset, sl_value, tp_value):
+    """
+    Modify an existing trade with specified parameters.
+
+    :param client: Trading client.
+    :param order_id: The ID of the trade to modify.
+    :param offset: New trailing offset.
+    :param sl_value: New stop loss value.
+    :param tp_value: New take profit value.
+    """
+    trade_info = {
+        "cmd": 3,  # MODIFY command
+        "order": order_id,
+        "offset": offset,
+        "sl": sl_value,
+        "tp": tp_value,
+        "symbol": "US500",  # Adjust this if necessary
+        "type": 3  # Modify type
+    }
+
+    request = {
+        "command": "tradeTransaction",
+        "arguments": {
+            "tradeTransInfo": trade_info
+        }
+    }
+
+    response = client.execute(request)
+    return response
 
 def close_all_trades(client):
     # Get all open trades

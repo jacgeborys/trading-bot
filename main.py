@@ -14,7 +14,7 @@ from trade import open_trade, close_all_trades, close_trade
 from datetime import datetime, timedelta
 
 class TradingBot:
-    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=15, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.01):
+    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=3, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.01):
         self.volume = volume
         self.client = client
         self.retry_attempts = 3
@@ -87,26 +87,79 @@ class TradingBot:
         self.highs = highs
         self.lows = lows
 
+        # Print the positions
+        print("Current Positions:")
+        print(f"Long positions: {self.positions['long_count']}")
+        print(f"Short positions: {self.positions['short_count']}")
+        print(f"Long profits: {self.positions['long_profits']}")
+        print(f"Short profits: {self.positions['short_profits']}")
+
         return prices, latest_open, latest_close, highs, lows, volume_data, self.positions
 
     def open_position(self, position_type, order_type='market', entry_price=None):
         volume = self.volume
         atr_value = self.atr_value
-        offset = round(2.0 * atr_value, 1)
+
+
+        recent_high = max(self.highs[-10:])
+        recent_low = min(self.lows[-10:])
+        recent_range = recent_high - recent_low
+
+        print(f"Recent high: {recent_high}, recent low: {recent_low}")
+        print(f"ATR value: {atr_value}")
+        print(f"Latest close: {self.latest_close}")
+
+        offset = round(1.0 * recent_range, 1)
 
         if order_type == 'market':
             entry_price = self.latest_close
         elif order_type == 'pending' and entry_price is None:
-            entry_price = (self.latest_close + 1.9 * atr_value) if position_type == 'long' else (self.latest_close - 1.9 * atr_value)
+            if position_type == 'long':
+                entry_price = self.latest_close + 0.8 * atr_value
+                print(f"Long position calculation: {self.latest_close} + 0.8 * {round(atr_value, 1)} = {round(entry_price, 1)}")
+            else:
+                entry_price = self.latest_close - 0.5 * atr_value
+                print(f"Short position calculation: {self.latest_close} - 0.8 * {round(atr_value, 1)} = {round(entry_price, 1)}")
 
-        tp_value = (entry_price + 0.7 * atr_value + 0.5) if position_type == 'long' else (entry_price - 0.7 * atr_value - 0.5)
-        sl_value = (entry_price - 10.0 * atr_value) if position_type == 'long' else (entry_price + 10.0 * atr_value)
+        entry_price = round(entry_price, 1)
+
+        print(f"Position type: {position_type}")
+        print(f"Calculated entry price: {entry_price}")
+
+        # Dynamic take profit based on recent range
+        tp_value = (entry_price + 0.5 * recent_range) if position_type == 'long' else (entry_price - 0.5 * recent_range)
+
+        # Stop loss based on ATR
+        sl_value = (entry_price - 1.0 * recent_range) if position_type == 'long' else (entry_price + 1.0 * recent_range)
+
         trade_direction = volume if position_type == 'long' else -volume
 
         time.sleep(2)
-        open_trade(self.client, self.symbol, trade_direction, entry_price, self.latest_close, offset, tp_value, sl_value, order_type)
-        print(f"Opening {position_type} position as {order_type} order with volume {volume}, Entry Price: {round(entry_price, 2)}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
+        open_trade(self.client, self.symbol, trade_direction, entry_price, self.latest_close, offset, tp_value,
+                   sl_value, order_type)
+        print(
+            f"Opening {position_type} position as {order_type} order with volume {volume}, Entry Price: {round(entry_price, 2)}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
         self.last_trade_action = f"{position_type.capitalize()} {order_type.capitalize()} Opened"
+
+    def modify_trade_offset(self, order_id, new_offset):
+        trade_info = {
+            "cmd": 3,  # MODIFY command
+            "order": order_id,
+            "offset": int(new_offset * 10),  # Convert to points
+            "symbol": self.symbol,
+            "type": 3  # Modify type
+        }
+
+        request = {
+            "command": "tradeTransaction",
+            "arguments": {
+                "tradeTransInfo": trade_info
+            }
+        }
+
+        response = self.client.execute(request)
+        print(f"Modified trade {order_id} with new offset: {new_offset}")
+        return response
 
     def log_data(self, current_time):
         vwap = self.vwap if self.vwap is not None else 0  # Default to 0 if VWAP is None
@@ -141,6 +194,39 @@ class TradingBot:
                                  index=False)
             print("Data log saved to Excel.")
 
+    def manage_positions(self):
+        for direction in ['long', 'short']:
+            profits = self.positions[f'{direction}_profits']
+            for i, profit in enumerate(profits):
+                if isinstance(profit, dict):
+                    order_id = profit.get('order')
+                    profit_value = profit.get('profit')
+                    if order_id and isinstance(profit_value, (int, float)) and profit_value >= self.profit_threshold:
+                        new_offset = round(1.0 * self.atr_value, 1)  # Set new offset to 1.0 * ATR
+                        time.sleep(3)  # Add delay before sending the request
+                        response = self.modify_trade_offset(order_id, new_offset)
+                        print(f"Modified {direction} position {i} with profit {profit_value}: {response}")
+
+    def modify_trade_offset(self, order_id, new_offset):
+        trade_info = {
+            "cmd": 3,  # MODIFY command
+            "order": order_id,
+            "offset": int(new_offset * 10),  # Convert to points
+            "symbol": self.symbol,
+            "type": 3  # Modify type
+        }
+
+        request = {
+            "command": "tradeTransaction",
+            "arguments": {
+                "tradeTransInfo": trade_info
+            }
+        }
+
+        response = self.client.execute(request)
+        print(f"Modified trade {order_id} with new offset: {new_offset}")
+        return response
+
     def run(self):
         last_trade_time = datetime.min
         reconnection_attempts = 0
@@ -160,9 +246,11 @@ class TradingBot:
                 print(f"Checking conditions at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 print(f"Latest Close: {round(self.latest_close, 2) if self.latest_close else 'Data Unavailable'}")
                 print(f"ATR: {round(self.atr_value, 2) if self.atr_value else 'Data Unavailable'}")
-                print(f"Histogram: {round(self.histogram, 2) if self.histogram else 'Data Unavailable'}")
                 print(f"Supertrend: {self.supertrend[-1]}")
                 print(f"Supertrend Direction: {self.supertrend_direction[-1]}")
+
+                # Manage existing positions
+                self.manage_positions()
 
                 # Avoid trades during consolidation periods
                 if self.supertrend_direction[-1] == 0:
@@ -170,17 +258,13 @@ class TradingBot:
                     time.sleep(seconds_until_next_minute() + 1)
                     continue
 
-                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 2:
+                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1.5:
                     if self.supertrend_direction[-1] == 1:
-                        entry_price = self.latest_close + 1.0 * self.atr_value
-                        entry_price = round(entry_price, 1)
-                        self.open_position('long', 'pending', entry_price)
-                        print(f"Set long pending order at price {entry_price}.")
+                        self.open_position('long', 'pending')
+                        print(f"Attempted to set long pending order.")
                     elif self.supertrend_direction[-1] == -1:
-                        entry_price = self.latest_close - 1.0 * self.atr_value
-                        entry_price = round(entry_price, 1)
-                        self.open_position('short', 'pending', entry_price)
-                        print(f"Set short pending order at price {entry_price}.")
+                        self.open_position('short', 'pending')
+                        print(f"Attempted to set short pending order.")
 
                     self.log_data(current_time)
                     last_trade_time = current_time
@@ -189,8 +273,9 @@ class TradingBot:
                 print(f"Sleeping for {sleep_time} seconds.")
                 time.sleep(sleep_time)
 
-            except (TimeoutError, ConnectionError) as e:
-                print(f"Encountered a connection issue: {str(e)}")
+            except Exception as e:
+                print(f"An unexpected error occurred: {str(e)}")
+                traceback.print_exc()
                 reconnection_attempts += 1
                 if reconnection_attempts > retry_attempts:
                     print("Exceeded retry attempts. Exiting...")
@@ -203,13 +288,10 @@ class TradingBot:
                     print("Failed to re-login. Exiting...")
                     break
 
-            except Exception as e:
-                print(f"An unexpected error occurred: {str(e)}")
-                traceback.print_exc()
-                break
 
 if __name__ == "__main__":
     userId = os.environ.get("XTB_USERID")
+    # userId = 16531572
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)
     if client and ssid:
