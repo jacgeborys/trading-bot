@@ -109,17 +109,17 @@ class TradingBot:
         print(f"ATR value: {atr_value}")
         print(f"Latest close: {self.latest_close}")
 
-        offset = round(1.0 * recent_range, 1)
+        offset = round(5.0 * recent_range, 1)
 
         if order_type == 'market':
             entry_price = self.latest_close
         elif order_type == 'pending' and entry_price is None:
             if position_type == 'long':
-                entry_price = self.latest_close + 0.8 * atr_value
-                print(f"Long position calculation: {self.latest_close} + 0.8 * {round(atr_value, 1)} = {round(entry_price, 1)}")
-            else:
                 entry_price = self.latest_close - 0.5 * atr_value
-                print(f"Short position calculation: {self.latest_close} - 0.8 * {round(atr_value, 1)} = {round(entry_price, 1)}")
+                print(f"Long position calculation: {self.latest_close} - 0.5 * {round(atr_value, 1)} = {round(entry_price, 1)}")
+            else:
+                entry_price = self.latest_close + 0.5 * atr_value
+                print(f"Short position calculation: {self.latest_close} + 0.5 * {round(atr_value, 1)} = {round(entry_price, 1)}")
 
         entry_price = round(entry_price, 1)
 
@@ -127,10 +127,10 @@ class TradingBot:
         print(f"Calculated entry price: {entry_price}")
 
         # Dynamic take profit based on recent range
-        tp_value = (entry_price + 0.5 * recent_range) if position_type == 'long' else (entry_price - 0.5 * recent_range)
+        tp_value = (entry_price + 0.8 * recent_range) if position_type == 'long' else (entry_price - 0.8 * recent_range)
 
         # Stop loss based on ATR
-        sl_value = (entry_price - 1.0 * recent_range) if position_type == 'long' else (entry_price + 1.0 * recent_range)
+        sl_value = (entry_price - 1.2 * recent_range) if position_type == 'long' else (entry_price + 1.2 * recent_range)
 
         trade_direction = volume if position_type == 'long' else -volume
 
@@ -258,7 +258,7 @@ class TradingBot:
                     time.sleep(seconds_until_next_minute() + 1)
                     continue
 
-                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 1.5:
+                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 0.5:
                     if self.supertrend_direction[-1] == 1:
                         self.open_position('long', 'pending')
                         print(f"Attempted to set long pending order.")
