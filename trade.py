@@ -192,3 +192,30 @@ def close_trade(client, position_type, volume_per_trade, min_profit=None, max_lo
         return "No matching trades were closed"
 
     return close_responses
+
+
+def partial_close_trade(client, symbol, order_id, close_volume):
+    trade_info = {
+        "cmd": 2,  # Close command
+        "order": order_id,
+        "symbol": symbol,
+        "volume": close_volume,
+        "type": 2,  # Immediate or Cancel
+    }
+
+    request = {
+        "command": "tradeTransaction",
+        "arguments": {
+            "tradeTransInfo": trade_info
+        }
+    }
+
+    response = client.execute(request)
+
+    if response['status']:
+        print(f"Partially closed trade {order_id} with volume {close_volume}")
+    else:
+        print(
+            f"Failed to partially close trade {order_id}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
+
+    return response

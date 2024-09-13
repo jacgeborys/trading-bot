@@ -10,13 +10,15 @@ from fetch_data import get_last_period_prices, get_current_positions, seconds_un
 from file_ops import write_to_csv
 from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap, calculate_sma, calculate_supertrend
 from login import login_to_xtb
-from trade import open_trade, close_all_trades, close_trade
+from trade import open_trade, close_all_trades, close_trade, partial_close_trade
 from datetime import datetime, timedelta
 
 class TradingBot:
-    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=3, second_profit_threshold=40, loss_threshold=-20, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.01):
+    def __init__(self, client, symbol, crossover_threshold=0.1, atr_threshold=1, profit_threshold=3, second_profit_threshold=40, loss_threshold=-40, partial_close_volume_profitable=0.01, partial_close_volume_losing=0.01, volume=0.01):
         self.volume = volume
         self.client = client
+        self.userId = userId
+        self.password = password
         self.retry_attempts = 3
         self.wait_time = 30
         self.symbol = symbol
@@ -96,6 +98,19 @@ class TradingBot:
 
         return prices, latest_open, latest_close, highs, lows, volume_data, self.positions
 
+    def get_trade_details(self, order_id):
+        trades_response = self.client.execute({
+            "command": "getTrades",
+            "arguments": {
+                "openedOnly": True
+            }
+        })
+        trades = trades_response.get("returnData", [])
+        for trade in trades:
+            if trade.get("order") == order_id:
+                return trade
+        return None
+
     def open_position(self, position_type, order_type='market', entry_price=None):
         volume = self.volume
         atr_value = self.atr_value
@@ -140,6 +155,19 @@ class TradingBot:
         print(
             f"Opening {position_type} position as {order_type} order with volume {volume}, Entry Price: {round(entry_price, 2)}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
         self.last_trade_action = f"{position_type.capitalize()} {order_type.capitalize()} Opened"
+
+    def close_partial_position(self, reason):
+        for direction in ['long', 'short']:
+            profits = self.positions[f'{direction}_profits']
+            if profits:
+                # Close the first position in the list
+                trade_to_close = profits[0]
+                order_id = trade_to_close.get('order')
+                if order_id:
+                    response = partial_close_trade(self.client, self.symbol, order_id, 0.01)
+                    print(
+                        f"Partially closed {direction} position with order ID {order_id} due to total {reason}. Response: {response}")
+                    break
 
     def modify_trade_offset(self, order_id, new_offset):
         trade_info = {
@@ -195,19 +223,54 @@ class TradingBot:
             print("Data log saved to Excel.")
 
     def manage_positions(self):
+        recent_high = max(self.highs[-10:])
+        recent_low = min(self.lows[-10:])
+        recent_range = recent_high - recent_low
+        total_profit = 0
+        total_loss = 0
+
         for direction in ['long', 'short']:
             profits = self.positions[f'{direction}_profits']
-            for i, profit in enumerate(profits):
+            for profit in profits:
                 if isinstance(profit, dict):
                     order_id = profit.get('order')
                     profit_value = profit.get('profit')
-                    if order_id and isinstance(profit_value, (int, float)) and profit_value >= self.profit_threshold:
-                        new_offset = round(1.0 * self.atr_value, 1)  # Set new offset to 1.0 * ATR
-                        time.sleep(3)  # Add delay before sending the request
-                        response = self.modify_trade_offset(order_id, new_offset)
-                        print(f"Modified {direction} position {i} with profit {profit_value}: {response}")
+
+                    if profit_value >= 0:
+                        total_profit += profit_value
+                    else:
+                        total_loss += abs(profit_value)
+
+                    if order_id and isinstance(profit_value, (int, float)):
+                        # Strategy 1: Modify offset based on individual profit
+                        if profit_value >= self.profit_threshold:
+                            new_offset = round(0.8 * recent_range, 1)  # Set new offset to 1.0 * ATR
+                            time.sleep(5)  # Add delay before sending the request
+                            response = self.modify_trade_offset(order_id, new_offset)
+                            print(
+                                f"Modified {direction} position with order ID {order_id}, profit {profit_value}: {response}")
+
+        # Strategy 2: Partial closing based on total profit or loss
+        if total_profit >= 40:
+            self.close_partial_position('profit')
+        elif total_loss >= 20:
+            self.close_partial_position('loss')
 
     def modify_trade_offset(self, order_id, new_offset):
+        # First, get the current trade details
+        trade_details = self.get_trade_details(order_id)
+
+        if trade_details is None:
+            print(f"Could not find trade details for order {order_id}")
+            return
+
+        current_volume = trade_details['volume']
+        min_trade_size = 0.01  # Set this to your broker's minimum trade size
+
+        if current_volume <= min_trade_size:
+            print(f"Trade {order_id} is too small to modify. Considering closing instead.")
+            return self.close_trade(order_id)
+
         trade_info = {
             "cmd": 3,  # MODIFY command
             "order": order_id,
@@ -224,7 +287,15 @@ class TradingBot:
         }
 
         response = self.client.execute(request)
-        print(f"Modified trade {order_id} with new offset: {new_offset}")
+        if not response['status']:
+            print(
+                f"Failed to modify trade {order_id}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
+            if response.get('errorCode') == 'BE4':
+                print("Considering closing the trade instead of modifying.")
+                return self.close_trade(order_id)
+        else:
+            print(f"Successfully modified trade {order_id} with new offset: {new_offset}")
+
         return response
 
     def run(self):
@@ -295,5 +366,5 @@ if __name__ == "__main__":
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)
     if client and ssid:
-        bot = TradingBot(client, "US500", 0.01, 1)
+        bot = TradingBot(client, "US500", userId, password, 0.01, 1)
         bot.run()
