@@ -45,9 +45,20 @@ def get_current_positions(client):
     trades_response = client.execute({"command": "getTrades", "arguments": {"openedOnly": True}})
     trades = trades_response.get("returnData", [])
 
-    positions = {'long': False, 'short': False, 'long_count': 0, 'short_count': 0, 'long_profits': [], 'short_profits': []}
+    positions = {
+        'long': False,
+        'short': False,
+        'long_count': 0,
+        'short_count': 0,
+        'long_profits': [],
+        'short_profits': []
+    }
     for trade in trades:
-        trade_info = {'order': trade["order2"], 'profit': trade["profit"]}
+        trade_info = {
+            'order': trade["order"],
+            'profit': trade["profit"],
+            'volume': trade["volume"]
+        }
         if trade["cmd"] == 0:  # 0 for long position
             positions['long'] = True
             positions['long_count'] += 1
@@ -58,6 +69,7 @@ def get_current_positions(client):
             positions['short_profits'].append(trade_info)
 
     return positions
+
 
 
 def seconds_until_next_minute():

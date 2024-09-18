@@ -194,13 +194,22 @@ def close_trade(client, position_type, volume_per_trade, min_profit=None, max_lo
     return close_responses
 
 
-def partial_close_trade(client, symbol, order_id, close_volume):
+def partial_close_trade(client, symbol, order_id, close_volume, cmd):
+    if close_volume <= 0:
+        print(f"Error: Cannot close trade with volume {close_volume}. Volume must be greater than 0.")
+        return {"status": False, "errorCode": "INVALID_VOLUME", "errorDescr": "Close volume must be greater than 0"}
+
     trade_info = {
-        "cmd": 2,  # Close command
+        "cmd": cmd,
+        "customComment": "Partial close",
+        "expiration": 0,
         "order": order_id,
+        "price": 1,
+        "sl": 0,
+        "tp": 0,
         "symbol": symbol,
-        "volume": close_volume,
-        "type": 2,  # Immediate or Cancel
+        "type": 2,
+        "volume": close_volume
     }
 
     request = {
@@ -210,12 +219,16 @@ def partial_close_trade(client, symbol, order_id, close_volume):
         }
     }
 
+    # Print the payload
+    import json
+    print("Payload being sent to API:")
+    print(json.dumps(request, indent=4))
+
     response = client.execute(request)
 
     if response['status']:
         print(f"Partially closed trade {order_id} with volume {close_volume}")
     else:
-        print(
-            f"Failed to partially close trade {order_id}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
+        print(f"Failed to partially close trade {order_id}. Error: {response.get('errorCode')} - {response.get('errorDescr')}")
 
     return response
