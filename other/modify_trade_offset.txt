@@ -1,0 +1,19 @@
+    def modify_trade_offset(self, order_id, new_offset):
+        trade_info = {
+            "cmd": 3,  # MODIFY command
+            "order": order_id,
+            "offset": int(new_offset * 10),  # Convert to points
+            "symbol": self.symbol,
+            "type": 3  # Modify type
+        }
+
+        request = {
+            "command": "tradeTransaction",
+            "arguments": {
+                "tradeTransInfo": trade_info
+            }
+        }
+
+        response = self.client.execute(request)
+        print(f"Modified trade {order_id} with new offset: {new_offset}")
+        return response

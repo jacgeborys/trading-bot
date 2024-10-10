@@ -83,6 +83,7 @@ class TradingBot:
         # Calculate indicators for 1-minute data
         atr_1m = calculate_atr(highs_1m, lows_1m, prices_1m)
         supertrend_1m, supertrend_direction_1m = calculate_supertrend(highs_1m, lows_1m, prices_1m, atr_1m)
+        rsi = calculate_rsi(pd.DataFrame(prices_1m, columns=['close']))
 
         # Calculate indicators for 5-minute data
         atr_5m = calculate_atr(highs_5m, lows_5m, prices_5m)
@@ -95,6 +96,7 @@ class TradingBot:
         self.supertrend_direction_5m = supertrend_direction_5m[-1]
         self.highs = highs_1m
         self.lows = lows_1m
+        self.rsi = rsi
         self.positions = get_current_positions(self.client)
 
         # Log positions
@@ -206,14 +208,14 @@ class TradingBot:
                 f"Waiting {self.min_action_interval - (current_time - self.last_action_time):.2f} seconds before next action")
             return
 
-        if long_profit <= -80:
+        if long_profit <= -60:
             self.action_queue.append(('long', 'loss'))
-        elif long_profit >= 50:
+        elif long_profit >= 90:
             self.action_queue.append(('long', 'profit'))
 
-        if short_profit <= -80:
+        if short_profit <= -60:
             self.action_queue.append(('short', 'loss'))
-        elif short_profit >= 50:
+        elif short_profit >= 90:
             self.action_queue.append(('short', 'profit'))
 
         if self.action_queue:
@@ -240,21 +242,29 @@ class TradingBot:
                 print(f"Checking conditions at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 print(f"Latest Close: {round(self.latest_close, 2)}")
                 print(f"ATR: {round(self.atr_value, 2)}")
+                print(f"RSI: {round(self.rsi, 2)}")
                 print(f"Supertrend 1m Direction: {self.supertrend_direction_1m}")
                 print(f"Supertrend 5m Direction: {self.supertrend_direction_5m}")
 
                 self.manage_positions()
 
-                # Entry Condition with 5-minute Confirmation
+                # Entry Condition with 5-minute Confirmation and RSI Filter
                 if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 0.5:
-                    if self.supertrend_direction_1m == 1 and self.supertrend_direction_5m == 1:
+                    if self.supertrend_direction_1m == 1 and self.supertrend_direction_5m == 1 and self.rsi < 60:
                         self.open_position('long', 'pending')
                         print("Attempted to set long pending order.")
-                    elif self.supertrend_direction_1m == -1 and self.supertrend_direction_5m == -1:
+                        last_trade_time = current_time
+                    elif self.supertrend_direction_1m == -1 and self.supertrend_direction_5m == -1 and self.rsi > 40:
                         self.open_position('short', 'pending')
                         print("Attempted to set short pending order.")
+                        last_trade_time = current_time
                     else:
-                        print("Supertrend directions do not align. No trade executed.")
+                        if self.rsi >= 60:
+                            print("RSI above 60, preventing long position.")
+                        elif self.rsi <= 40:
+                            print("RSI below 40, preventing short position.")
+                        else:
+                            print("Supertrend directions do not align. No trade executed.")
 
                 sleep_time = seconds_until_next_minute() + 1
                 print(f"Sleeping for {sleep_time} seconds.")
@@ -277,7 +287,8 @@ class TradingBot:
 
 
 if __name__ == "__main__":
-    userId = os.environ.get("XTB_USERID")
+    # userId = os.environ.get("XTB_USERID")
+    userId = 16877125
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)
     if client and ssid:
