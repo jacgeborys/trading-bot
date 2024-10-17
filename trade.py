@@ -50,7 +50,7 @@ def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0
     # Trade transaction information
     trade_info = {
         "cmd": cmd_value,
-        "customComment": "Trading based on MA crossover",
+        "customComment": "Trading based on bot",
         "offset": offset,
         "price": price,  # Use price for both market and pending types if needed
         "sl": sl_value,
@@ -74,7 +74,8 @@ def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0
         "response": response
     }
 
-def modify_trade(client, order_id, offset, sl_value, tp_value):
+
+def modify_trade(client, order_id, offset, sl_value, tp_value, volume):
     """
     Modify an existing trade with specified parameters.
 
@@ -83,15 +84,18 @@ def modify_trade(client, order_id, offset, sl_value, tp_value):
     :param offset: New trailing offset.
     :param sl_value: New stop loss value.
     :param tp_value: New take profit value.
+    :param volume: Trade volume.
     """
     trade_info = {
-        "cmd": 3,  # MODIFY command
+        "cmd": 0,  # Modify command
         "order": order_id,
         "offset": offset,
         "sl": sl_value,
         "tp": tp_value,
-        "symbol": "US500",  # Adjust this if necessary
-        "type": 3  # Modify type
+        "price": 1.0,  # Static price
+        "symbol": "US500",
+        "type": 3,  # Modify type
+        "volume": volume  # Add volume
     }
 
     request = {

@@ -12,7 +12,7 @@ from fetch_data import get_last_period_prices, get_current_positions, seconds_un
 from file_ops import write_to_csv
 from indicators import calculate_macd, calculate_atr, calculate_rsi, calculate_vwap, calculate_sma, calculate_supertrend
 from login import login_to_xtb
-from trade import open_trade, close_all_trades, close_trade, partial_close_trade
+from trade import open_trade, close_all_trades, close_trade, partial_close_trade, modify_trade
 
 
 class TradingBot:
@@ -54,6 +54,8 @@ class TradingBot:
         # Fetch initial data
         self.fetch_and_prepare_data()
 
+        self.trade_profit_timestamps = {}  # Track profit timestamps for each trade
+
     def fetch_and_prepare_data(self):
         # Fetch 1-minute data
         response_1m = get_last_period_prices(self.client, self.symbol, period=1)
@@ -62,6 +64,8 @@ class TradingBot:
             return False
 
         prices_1m, latest_open_1m, latest_close_1m, highs_1m, lows_1m, volume_1m = response_1m
+
+        time.sleep(2)
 
         # Fetch 5-minute data
         response_5m = get_last_period_prices(self.client, self.symbol, period=5)
@@ -132,6 +136,7 @@ class TradingBot:
         trade_direction = self.volume if position_type == 'long' else -self.volume
 
         time.sleep(2)
+
         open_trade(self.client, self.symbol, trade_direction, entry_price, self.latest_close, offset, tp_value, sl_value, order_type)
         print(f"Opening {position_type} position as {order_type} order with volume {self.volume}, Entry Price: {round(entry_price, 2)}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
         self.last_trade_action = f"{position_type.capitalize()} {order_type.capitalize()} Opened"
@@ -158,6 +163,62 @@ class TradingBot:
                     f"Cannot partially close {direction} trade {order_id}; current volume {current_volume} is less than minimum trade size {min_trade_size}.")
         else:
             print(f"No {direction} positions to partially close.")
+
+    def monitor_and_reduce_tp(self):
+        """
+        Check if any trades' profits haven't increased for 2 minutes and adjust both take profit and stop loss.
+        """
+        trades = get_current_positions(self.client)
+        for direction in ['long_profits', 'short_profits']:
+            for trade in trades[direction]:
+                order_id = trade['order']
+                current_profit = trade['profit']
+                current_tp = trade.get('tp', 0)
+                current_sl = trade.get('sl', 0)  # Fetch current SL
+
+                # Check if the profit hasn't changed in 2 minutes
+                if order_id not in self.trade_profit_timestamps:
+                    self.trade_profit_timestamps[order_id] = {'profit': current_profit, 'timestamp': time.time()}
+
+                last_profit_info = self.trade_profit_timestamps[order_id]
+
+                if current_profit > last_profit_info['profit']:
+                    # Profit increased, update timestamp
+                    self.trade_profit_timestamps[order_id] = {'profit': current_profit, 'timestamp': time.time()}
+                else:
+                    # Check if 2 minutes have passed without an increase in profit
+                    time_since_last_increase = time.time() - last_profit_info['timestamp']
+                    if time_since_last_increase > 120:  # 2 minutes = 120 seconds
+                        print(f"Trade {order_id}: Profit hasn't increased for {int(time_since_last_increase)} seconds.")
+                        print(f"Current TP: {current_tp}, Current SL: {current_sl}")
+
+                        # Offset to avoid overloading the server with too many requests at once
+                        time.sleep(2)
+
+                        # Adjust take profit and stop loss based on direction
+                        if direction == 'long_profits':
+                            # Decrease TP and tighten SL for long trades
+                            new_tp = current_tp - 0.4
+                            new_sl = current_sl + 0.2  # Tighten SL by increasing it
+                            print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
+                            print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
+                        elif direction == 'short_profits':
+                            # Increase TP and tighten SL for short trades
+                            new_tp = current_tp + 0.4
+                            new_sl = current_sl - 0.2  # Tighten SL by decreasing it
+                            print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
+                            print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
+
+                        new_tp = round(new_tp, 1)  # Round TP to one decimal place
+                        new_sl = round(new_sl, 1)  # Round SL to one decimal place
+
+                        # Use modify_trade to update both TP and SL
+                        modify_response = modify_trade(self.client, order_id, 0, new_sl, new_tp, 0.01)
+                        print(
+                            f"Modified trade {order_id}: adjusted TP to {new_tp} and SL to {new_sl}. Response: {modify_response}")
+
+                        # Update timestamp after modifying
+                        self.trade_profit_timestamps[order_id] = {'profit': current_profit, 'timestamp': time.time()}
 
     def log_data(self, current_time):
         vwap = self.vwap if self.vwap is not None else 0
@@ -248,6 +309,8 @@ class TradingBot:
 
                 self.manage_positions()
 
+                self.monitor_and_reduce_tp()
+
                 # Entry Condition with 5-minute Confirmation and RSI Filter
                 if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 0.5:
                     if self.supertrend_direction_1m == 1 and self.supertrend_direction_5m == 1 and self.rsi < 60:
@@ -287,8 +350,7 @@ class TradingBot:
 
 
 if __name__ == "__main__":
-    # userId = os.environ.get("XTB_USERID")
-    userId = 16877125
+    userId = os.environ.get("XTB_USERID")
     password = os.environ.get("XTB_PASSWORD")
     client, ssid = login_to_xtb(userId, password)
     if client and ssid:
