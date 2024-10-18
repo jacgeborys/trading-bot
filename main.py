@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from collections import deque
 from datetime import datetime, timedelta
+from collections import deque
 
 from fetch_data import get_last_period_prices, get_current_positions, seconds_until_next_minute
 from file_ops import write_to_csv
@@ -50,6 +51,9 @@ class TradingBot:
         self.atr_value = None
         self.supertrend_direction_1m = None
         self.supertrend_direction_5m = None
+
+        # Initialize profit history tracking
+        self.trade_profit_history = {}  # Store the last two profit values for each trade
 
         # Fetch initial data
         self.fetch_and_prepare_data()
@@ -131,7 +135,7 @@ class TradingBot:
         print(f"Position type: {position_type}")
         print(f"Calculated entry price: {entry_price}")
 
-        tp_value = entry_price + (1.6 if position_type == 'long' else -1.6) * recent_range
+        tp_value = entry_price + (1.8 if position_type == 'long' else -1.8) * recent_range
         sl_value = entry_price + (-1.2 if position_type == 'long' else 1.2) * recent_range
         trade_direction = self.volume if position_type == 'long' else -self.volume
 
@@ -164,61 +168,67 @@ class TradingBot:
         else:
             print(f"No {direction} positions to partially close.")
 
+    from collections import deque
+
     def monitor_and_reduce_tp(self):
         """
-        Check if any trades' profits haven't increased for 2 minutes and adjust both take profit and stop loss.
+        Check if any trades' profits haven't increased over the last two recorded profits
+        and adjust both take profit and stop loss.
         """
-        trades = get_current_positions(self.client)
+        # Ensure self.positions has the latest data
+        if not self.positions:
+            print("No position data available.")
+            return
+
+        # Loop through both long and short trades
         for direction in ['long_profits', 'short_profits']:
-            for trade in trades[direction]:
+            for trade in self.positions[direction]:
                 order_id = trade['order']
                 current_profit = trade['profit']
-                current_tp = trade.get('tp', 0)
-                current_sl = trade.get('sl', 0)  # Fetch current SL
+                current_tp = trade.get('tp', (self.latest_close + 8) if direction == 'long_profits' else (self.latest_close - 8))
+                current_sl = trade.get('sl', (self.latest_close - 5) if direction == 'long_profits' else (self.latest_close + 5))  # Fetch current SL
 
-                # Check if the profit hasn't changed in 2 minutes
-                if order_id not in self.trade_profit_timestamps:
-                    self.trade_profit_timestamps[order_id] = {'profit': current_profit, 'timestamp': time.time()}
+                # If this is the first time seeing this trade, initialize its profit history
+                if order_id not in self.trade_profit_history:
+                    self.trade_profit_history[order_id] = deque(maxlen=2)  # Store up to 2 last profits
 
-                last_profit_info = self.trade_profit_timestamps[order_id]
+                # Get the last two recorded profits (if they exist)
+                last_two_profits = list(self.trade_profit_history[order_id])
 
-                if current_profit > last_profit_info['profit']:
-                    # Profit increased, update timestamp
-                    self.trade_profit_timestamps[order_id] = {'profit': current_profit, 'timestamp': time.time()}
-                else:
-                    # Check if 2 minutes have passed without an increase in profit
-                    time_since_last_increase = time.time() - last_profit_info['timestamp']
-                    if time_since_last_increase > 120:  # 2 minutes = 120 seconds
-                        print(f"Trade {order_id}: Profit hasn't increased for {int(time_since_last_increase)} seconds.")
-                        print(f"Current TP: {current_tp}, Current SL: {current_sl}")
+                # Compare current profit with the last two recorded profits (if any)
+                if len(last_two_profits) == 2 and current_profit <= max(last_two_profits):
+                    # The profit hasn't increased, so we adjust the TP and SL
+                    print(f"Trade {order_id}: Profit hasn't increased compared to the last two records.")
+                    print(f"Current TP: {current_tp}, Current SL: {current_sl}")
 
-                        # Offset to avoid overloading the server with too many requests at once
-                        time.sleep(2)
+                    # Offset to avoid overloading the server with too many requests at once
+                    time.sleep(2)
 
-                        # Adjust take profit and stop loss based on direction
-                        if direction == 'long_profits':
-                            # Decrease TP and tighten SL for long trades
-                            new_tp = current_tp - 0.4
-                            new_sl = current_sl + 0.2  # Tighten SL by increasing it
-                            print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
-                            print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
-                        elif direction == 'short_profits':
-                            # Increase TP and tighten SL for short trades
-                            new_tp = current_tp + 0.4
-                            new_sl = current_sl - 0.2  # Tighten SL by decreasing it
-                            print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
-                            print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
+                    # Adjust take profit and stop loss based on direction
+                    if direction == 'long_profits':
+                        # Decrease TP and tighten SL for long trades
+                        new_tp = current_tp - round(0.3 * self.atr_value, 1)
+                        new_sl = current_sl + round(0.1 * self.atr_value, 1)  # Tighten SL by increasing it from its current value
+                        print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
+                        print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
+                    elif direction == 'short_profits':
+                        # Increase TP and tighten SL for short trades
+                        new_tp = current_tp + round(0.3 * self.atr_value, 1)
+                        new_sl = current_sl - round(0.1 * self.atr_value, 1)  # Tighten SL by decreasing it from its current value
+                        print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
+                        print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
 
-                        new_tp = round(new_tp, 1)  # Round TP to one decimal place
-                        new_sl = round(new_sl, 1)  # Round SL to one decimal place
+                    # Ensure values are rounded properly
+                    new_tp = round(new_tp, 1)  # Round TP to one decimal place
+                    new_sl = round(new_sl, 1)  # Round SL to one decimal place
 
-                        # Use modify_trade to update both TP and SL
-                        modify_response = modify_trade(self.client, order_id, 0, new_sl, new_tp, 0.01)
-                        print(
-                            f"Modified trade {order_id}: adjusted TP to {new_tp} and SL to {new_sl}. Response: {modify_response}")
+                    # Use modify_trade to update both TP and SL
+                    modify_response = modify_trade(self.client, order_id, 0, new_sl, new_tp, 0.01)
+                    print(
+                        f"Modified trade {order_id}: adjusted TP to {new_tp} and SL to {new_sl}. Response: {modify_response}")
 
-                        # Update timestamp after modifying
-                        self.trade_profit_timestamps[order_id] = {'profit': current_profit, 'timestamp': time.time()}
+                # Always update the profit history with the current profit
+                self.trade_profit_history[order_id].append(current_profit)
 
     def log_data(self, current_time):
         vwap = self.vwap if self.vwap is not None else 0
