@@ -207,14 +207,14 @@ class TradingBot:
                     # Adjust take profit and stop loss based on direction
                     if direction == 'long_profits':
                         # Decrease TP and tighten SL for long trades
-                        new_tp = current_tp - round(0.3 * self.atr_value, 1)
-                        new_sl = current_sl + round(0.1 * self.atr_value, 1)  # Tighten SL by increasing it from its current value
+                        new_tp = current_tp - round(0.1 * self.atr_value, 1)
+                        new_sl = current_sl + round(0.3 * self.atr_value, 1)  # Tighten SL by increasing it from its current value
                         print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
                         print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
                     elif direction == 'short_profits':
                         # Increase TP and tighten SL for short trades
-                        new_tp = current_tp + round(0.3 * self.atr_value, 1)
-                        new_sl = current_sl - round(0.1 * self.atr_value, 1)  # Tighten SL by decreasing it from its current value
+                        new_tp = current_tp + round(0.1 * self.atr_value, 1)
+                        new_sl = current_sl - round(0.3 * self.atr_value, 1)  # Tighten SL by decreasing it from its current value
                         print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
                         print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
 
