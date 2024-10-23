@@ -54,7 +54,8 @@ def calculate_ema(prices, period):
     return ema
 
 def calculate_macd(prices):
-    if not prices:
+    # Check if the prices series is empty
+    if prices.empty:
         return None, None, None
 
     ema_12 = calculate_ema(prices, 12)
@@ -63,7 +64,8 @@ def calculate_macd(prices):
     signal_line = macd_line.ewm(span=9, adjust=False).mean()
     histogram = macd_line - signal_line
 
-    return macd_line.iloc[-1], signal_line.iloc[-1], histogram.iloc[-1]
+    # Return the entire MACD line, Signal line, and Histogram for further use
+    return macd_line, signal_line, histogram
 
 def calculate_vwap(prices, volume_data):
     if len(prices) != len(volume_data):

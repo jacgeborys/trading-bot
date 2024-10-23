@@ -30,7 +30,6 @@ class TradingBot:
         self.loss_threshold = loss_threshold
         self.partial_close_volume_profitable = partial_close_volume_profitable
         self.partial_close_volume_losing = partial_close_volume_losing
-        self.prev_histogram = None
         self.trade_just_opened = False
         self.last_trade_action = 'None'
         self.data_log = pd.DataFrame()
@@ -40,7 +39,7 @@ class TradingBot:
         self.action_queue = deque()
         self.min_action_interval = 5  # Minimum time between actions in seconds
 
-        # Initialize these attributes
+        # Initialize attributes for indicators and prices
         self.prices = None
         self.latest_open = None
         self.latest_close = None
@@ -49,10 +48,9 @@ class TradingBot:
         self.volume_data = None
         self.positions = None
         self.atr_value = None
-        self.supertrend_direction_1m = None
-        self.supertrend_direction_5m = None
+        self.macd_histogram_1m = None
 
-        # Initialize profit history tracking
+        # Initialize profit history tracking for dynamic TP/SL
         self.trade_profit_history = {}  # Store the last two profit values for each trade
 
         # Fetch initial data
@@ -65,58 +63,48 @@ class TradingBot:
         response_1m = get_last_period_prices(self.client, self.symbol, period=1)
         if not response_1m or len(response_1m) != 6:
             print("Failed to fetch 1-minute data.")
+            time.sleep(5)  # Add delay to avoid frequent requests
             return False
 
         prices_1m, latest_open_1m, latest_close_1m, highs_1m, lows_1m, volume_1m = response_1m
 
-        time.sleep(2)
-
-        # Fetch 5-minute data
-        response_5m = get_last_period_prices(self.client, self.symbol, period=5)
-        if not response_5m or len(response_5m) != 6:
-            print("Failed to fetch 5-minute data.")
+        # Ensure sufficient data for MACD calculation (at least 26 candles)
+        if len(prices_1m) < 26:
+            print("Not enough data points for MACD calculation.")
+            time.sleep(5)  # Add delay to avoid frequent requests
             return False
 
-        prices_5m, _, _, highs_5m, lows_5m, _ = response_5m
+        # Calculate MACD for 1-minute data
+        macd_line_1m, signal_line_1m, histogram_1m = calculate_macd(pd.DataFrame(prices_1m, columns=['close'])['close'])
 
-        # Ensure sufficient data
-        if len(prices_1m) < 14 or len(highs_1m) < 14 or len(lows_1m) < 14:
-            print("Not enough 1-minute data points for calculations.")
-            return False
+        # Extract the last 3 histogram values for momentum analysis
+        self.macd_histogram_1m = histogram_1m[-3:].values  # Last 3 histogram values
 
-        if len(prices_5m) < 14 or len(highs_5m) < 14 or len(lows_5m) < 14:
-            print("Not enough 5-minute data points for calculations.")
-            return False
-
-        # Calculate indicators for 1-minute data
+        # Calculate ATR for risk management
         atr_1m = calculate_atr(highs_1m, lows_1m, prices_1m)
-        supertrend_1m, supertrend_direction_1m = calculate_supertrend(highs_1m, lows_1m, prices_1m, atr_1m)
-        rsi = calculate_rsi(pd.DataFrame(prices_1m, columns=['close']))
 
-        # Calculate indicators for 5-minute data
-        atr_5m = calculate_atr(highs_5m, lows_5m, prices_5m)
-        supertrend_5m, supertrend_direction_5m = calculate_supertrend(highs_5m, lows_5m, prices_5m, atr_5m)
-
-        # Store calculated values
+        # Store the latest close price, highs, lows, and ATR value
         self.latest_close = latest_close_1m
-        self.atr_value = atr_1m.iloc[-1]
-        self.supertrend_direction_1m = supertrend_direction_1m[-1]
-        self.supertrend_direction_5m = supertrend_direction_5m[-1]
-        self.highs = highs_1m
-        self.lows = lows_1m
-        self.rsi = rsi
+        self.highs = highs_1m  # Store highs for later use
+        self.lows = lows_1m  # Store lows for later use
+        self.atr_value = atr_1m.iloc[-1]  # Store the most recent ATR value
+
+        time.sleep(1)
+
+        # Fetch current positions
         self.positions = get_current_positions(self.client)
 
-        # Log positions
-        print("Current Positions:")
-        print(f"Long positions: {self.positions['long_count']}")
-        print(f"Short positions: {self.positions['short_count']}")
-        print(f"Long profits: {self.positions['long_profits']}")
-        print(f"Short profits: {self.positions['short_profits']}")
+        # Add a delay after fetching data to avoid rate-limiting
+        time.sleep(2)
 
-        return True  # Indicate success
+        return True
 
     def open_position(self, position_type, order_type='market', entry_price=None):
+        # Check that highs and lows are available
+        if self.highs is None or self.lows is None:
+            print("Highs or lows data not available, cannot open position.")
+            return
+
         recent_high, recent_low = max(self.highs[-10:]), min(self.lows[-10:])
         recent_range = recent_high - recent_low
         offset = round(5.0 * recent_range, 1)
@@ -129,7 +117,8 @@ class TradingBot:
             entry_price = self.latest_close
         elif order_type == 'pending' and entry_price is None:
             entry_price = self.latest_close + (-0.5 if position_type == 'long' else 0.5) * self.atr_value
-            print(f"{position_type.capitalize()} position calculation: {self.latest_close} {'-' if position_type == 'long' else '+'} 0.5 * {round(self.atr_value, 1)} = {round(entry_price, 1)}")
+            print(
+                f"{position_type.capitalize()} position calculation: {self.latest_close} {'-' if position_type == 'long' else '+'} 0.5 * {round(self.atr_value, 1)} = {round(entry_price, 1)}")
 
         entry_price = round(entry_price, 1)
         print(f"Position type: {position_type}")
@@ -141,8 +130,10 @@ class TradingBot:
 
         time.sleep(2)
 
-        open_trade(self.client, self.symbol, trade_direction, entry_price, self.latest_close, offset, tp_value, sl_value, order_type)
-        print(f"Opening {position_type} position as {order_type} order with volume {self.volume}, Entry Price: {round(entry_price, 2)}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
+        open_trade(self.client, self.symbol, trade_direction, entry_price, self.latest_close, offset, tp_value,
+                   sl_value, order_type)
+        print(
+            f"Opening {position_type} position as {order_type} order with volume {self.volume}, Entry Price: {round(entry_price, 2)}, TP: {round(tp_value, 2)}, SL: {round(sl_value, 2)}")
         self.last_trade_action = f"{position_type.capitalize()} {order_type.capitalize()} Opened"
 
     def close_partial_position(self, direction, reason):
@@ -173,7 +164,7 @@ class TradingBot:
     def monitor_and_reduce_tp(self):
         """
         Check if any trades' profits haven't increased over the last two recorded profits
-        and adjust both take profit and stop loss.
+        and adjust both take profit (TP) and stop loss (SL).
         """
         # Ensure self.positions has the latest data
         if not self.positions:
@@ -185,8 +176,10 @@ class TradingBot:
             for trade in self.positions[direction]:
                 order_id = trade['order']
                 current_profit = trade['profit']
-                current_tp = trade.get('tp', (self.latest_close + 8) if direction == 'long_profits' else (self.latest_close - 8))
-                current_sl = trade.get('sl', (self.latest_close - 5) if direction == 'long_profits' else (self.latest_close + 5))  # Fetch current SL
+                current_tp = trade.get('tp', (self.latest_close + 8) if direction == 'long_profits' else (
+                            self.latest_close - 8))
+                current_sl = trade.get('sl', (self.latest_close - 5) if direction == 'long_profits' else (
+                            self.latest_close + 5))
 
                 # If this is the first time seeing this trade, initialize its profit history
                 if order_id not in self.trade_profit_history:
@@ -207,20 +200,20 @@ class TradingBot:
                     # Adjust take profit and stop loss based on direction
                     if direction == 'long_profits':
                         # Decrease TP and tighten SL for long trades
-                        new_tp = current_tp - round(0.1 * self.atr_value, 1)
-                        new_sl = current_sl + round(0.3 * self.atr_value, 1)  # Tighten SL by increasing it from its current value
+                        new_tp = current_tp - round(0.3 * self.atr_value, 1)
+                        new_sl = current_sl + round(0.1 * self.atr_value, 1)  # Tighten SL by increasing it
                         print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
                         print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
                     elif direction == 'short_profits':
                         # Increase TP and tighten SL for short trades
-                        new_tp = current_tp + round(0.1 * self.atr_value, 1)
-                        new_sl = current_sl - round(0.3 * self.atr_value, 1)  # Tighten SL by decreasing it from its current value
+                        new_tp = current_tp + round(0.3 * self.atr_value, 1)
+                        new_sl = current_sl - round(0.1 * self.atr_value, 1)  # Tighten SL by decreasing it
                         print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
                         print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
 
                     # Ensure values are rounded properly
-                    new_tp = round(new_tp, 1)  # Round TP to one decimal place
-                    new_sl = round(new_sl, 1)  # Round SL to one decimal place
+                    new_tp = round(new_tp, 1)
+                    new_sl = round(new_sl, 1)
 
                     # Use modify_trade to update both TP and SL
                     modify_response = modify_trade(self.client, order_id, 0, new_sl, new_tp, 0.01)
@@ -313,33 +306,43 @@ class TradingBot:
                 print(f"Checking conditions at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 print(f"Latest Close: {round(self.latest_close, 2)}")
                 print(f"ATR: {round(self.atr_value, 2)}")
-                print(f"RSI: {round(self.rsi, 2)}")
-                print(f"Supertrend 1m Direction: {self.supertrend_direction_1m}")
-                print(f"Supertrend 5m Direction: {self.supertrend_direction_5m}")
+                print(f"MACD Histogram (1m): {self.macd_histogram_1m}")
 
                 self.manage_positions()
 
+                # Check and adjust TP and SL dynamically based on profit trends
                 self.monitor_and_reduce_tp()
 
-                # Entry Condition with 5-minute Confirmation and RSI Filter
-                if (current_time - last_trade_time).total_seconds() >= 59 and self.atr_value > 0.5:
-                    if self.supertrend_direction_1m == 1 and self.supertrend_direction_5m == 1 and self.rsi < 60:
-                        self.open_position('long', 'pending')
-                        print("Attempted to set long pending order.")
-                        last_trade_time = current_time
-                    elif self.supertrend_direction_1m == -1 and self.supertrend_direction_5m == -1 and self.rsi > 40:
-                        self.open_position('short', 'pending')
-                        print("Attempted to set short pending order.")
-                        last_trade_time = current_time
-                    else:
-                        if self.rsi >= 60:
-                            print("RSI above 60, preventing long position.")
-                        elif self.rsi <= 40:
-                            print("RSI below 40, preventing short position.")
-                        else:
-                            print("Supertrend directions do not align. No trade executed.")
+                # Ensure we have 3 histogram values for momentum analysis
+                if len(self.macd_histogram_1m) == 3:
+                    h1, h2, h3 = self.macd_histogram_1m  # h1 is the oldest, h3 is the most recent
 
-                sleep_time = seconds_until_next_minute() + 1
+                    # No trade condition: if all three histogram values are within ±0.3
+                    if all(abs(h) < 0.3 for h in [h1, h2, h3]):
+                        print("All histogram values are below the |0.3| threshold. No trade.")
+                        continue
+
+                    # Short Trade: If the histogram is positive but momentum is decreasing or reverting
+                    if h3 > 0 and (h2 - h1) > (h3 - h2):
+                        # Place a short pending order
+                        self.open_position('short', 'pending')
+                        print("Placed short pending order based on decreasing positive MACD momentum.")
+                        last_trade_time = current_time
+
+                    # Long Trade: If the histogram is negative but losing downward momentum or reverting
+                    elif h3 < 0 and (h2 - h1) < (h3 - h2):
+                        # Place a long pending order
+                        self.open_position('long', 'pending')
+                        print("Placed long pending order based on decreasing negative MACD momentum.")
+                        last_trade_time = current_time
+
+                    else:
+                        print("No trade signal based on MACD momentum.")
+                else:
+                    print("Not enough histogram data for decision-making.")
+
+                # Slightly increase the sleep time to avoid hitting the rate limit
+                sleep_time = seconds_until_next_minute() + 3  # Increased sleep time by 3 seconds
                 print(f"Sleeping for {sleep_time} seconds.")
                 time.sleep(sleep_time)
 
