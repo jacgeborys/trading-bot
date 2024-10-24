@@ -53,14 +53,17 @@ def get_current_positions(client):
         'long_profits': [],
         'short_profits': []
     }
+
     for trade in trades:
         trade_info = {
             'order': trade["order"],
             'profit': trade["profit"],
             'volume': trade["volume"],
             'tp': trade["tp"],
-            'sl': trade["sl"]
+            'sl': trade["sl"],
+            'open_price': trade["open_price"]  # Adding opening price to trade info
         }
+
         if trade["cmd"] == 0:  # 0 for long position
             positions['long'] = True
             positions['long_count'] += 1
@@ -74,8 +77,6 @@ def get_current_positions(client):
         positions['sl'] = 'sl'
 
     return positions
-
-
 
 def seconds_until_next_minute():
     current_time = time.time()  # current time in seconds

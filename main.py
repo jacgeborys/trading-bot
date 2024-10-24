@@ -63,39 +63,67 @@ class TradingBot:
         response_1m = get_last_period_prices(self.client, self.symbol, period=1)
         if not response_1m or len(response_1m) != 6:
             print("Failed to fetch 1-minute data.")
-            time.sleep(5)  # Add delay to avoid frequent requests
+            time.sleep(5)
             return False
 
         prices_1m, latest_open_1m, latest_close_1m, highs_1m, lows_1m, volume_1m = response_1m
 
-        # Ensure sufficient data for MACD calculation (at least 26 candles)
-        if len(prices_1m) < 26:
-            print("Not enough data points for MACD calculation.")
-            time.sleep(5)  # Add delay to avoid frequent requests
+        # Store basic price data
+        self.latest_close = latest_close_1m
+        self.highs = highs_1m
+        self.lows = lows_1m
+
+        # Calculate ATR separately
+        prices_df = pd.DataFrame(prices_1m, columns=['close'])
+        self.atr_value = calculate_atr(highs_1m, lows_1m, prices_df['close']).iloc[-1]
+        print(f"Calculated ATR value: {self.atr_value}")  # Debug print
+
+        # Add delay before fetching 15-minute data
+        time.sleep(2)
+
+        # Fetch 15-minute data
+        response_15m = get_last_period_prices(self.client, self.symbol, period=15)
+        if not response_15m or len(response_15m) != 6:
+            print("Failed to fetch 15-minute data.")
+            time.sleep(5)
             return False
 
-        # Calculate MACD for 1-minute data
-        macd_line_1m, signal_line_1m, histogram_1m = calculate_macd(pd.DataFrame(prices_1m, columns=['close'])['close'])
+        prices_15m = response_15m[0]
 
-        # Extract the last 3 histogram values for momentum analysis
-        self.macd_histogram_1m = histogram_1m[-3:].values  # Last 3 histogram values
+        # Calculate MACD for both timeframes
+        try:
+            # 1-minute MACD
+            macd_line_1m, signal_line_1m, histogram_1m = calculate_macd(pd.Series(prices_1m))
+            if histogram_1m is not None:
+                self.macd_histogram_1m = histogram_1m.values[-3:]
+            else:
+                print("Warning: 1m MACD calculation returned None")
+                return False
 
-        # Calculate ATR for risk management
-        atr_1m = calculate_atr(highs_1m, lows_1m, prices_1m)
+            # 15-minute MACD
+            macd_line_15m, signal_line_15m, histogram_15m = calculate_macd(pd.Series(prices_15m))
+            if histogram_15m is not None:
+                self.macd_histogram_15m = histogram_15m.values[-1]
+                self.macd_15m = macd_line_15m.values[-1]
+                self.signal_15m = signal_line_15m.values[-1]
+            else:
+                print("Warning: 15m MACD calculation returned None")
+                return False
 
-        # Store the latest close price, highs, lows, and ATR value
-        self.latest_close = latest_close_1m
-        self.highs = highs_1m  # Store highs for later use
-        self.lows = lows_1m  # Store lows for later use
-        self.atr_value = atr_1m.iloc[-1]  # Store the most recent ATR value
+            # Debug prints
+            print(f"1m MACD Histogram (last 3): {self.macd_histogram_1m}")
+            print(f"15m MACD Histogram (latest): {self.macd_histogram_15m}")
+
+        except Exception as e:
+            print(f"Error in MACD calculations: {e}")
+            return False
 
         time.sleep(1)
 
         # Fetch current positions
         self.positions = get_current_positions(self.client)
 
-        # Add a delay after fetching data to avoid rate-limiting
-        time.sleep(2)
+        time.sleep(1)
 
         return True
 
@@ -124,11 +152,11 @@ class TradingBot:
         print(f"Position type: {position_type}")
         print(f"Calculated entry price: {entry_price}")
 
-        tp_value = entry_price + (1.8 if position_type == 'long' else -1.8) * recent_range
+        tp_value = entry_price + (2.0 if position_type == 'long' else -2.0) * recent_range
         sl_value = entry_price + (-1.2 if position_type == 'long' else 1.2) * recent_range
         trade_direction = self.volume if position_type == 'long' else -self.volume
 
-        time.sleep(2)
+        time.sleep(1)
 
         open_trade(self.client, self.symbol, trade_direction, entry_price, self.latest_close, offset, tp_value,
                    sl_value, order_type)
@@ -163,10 +191,10 @@ class TradingBot:
 
     def monitor_and_reduce_tp(self):
         """
-        Check if any trades' profits haven't increased over the last two recorded profits
-        and adjust both take profit (TP) and stop loss (SL).
+        Monitor trades and adjust TP/SL based on profit conditions:
+        1. Reduce TP if profit isn't increasing
+        2. Move SL to break-even + 0.5 when profit > 5
         """
-        # Ensure self.positions has the latest data
         if not self.positions:
             print("No position data available.")
             return
@@ -176,38 +204,80 @@ class TradingBot:
             for trade in self.positions[direction]:
                 order_id = trade['order']
                 current_profit = trade['profit']
-                current_tp = trade.get('tp', (self.latest_close + 8) if direction == 'long_profits' else (
-                            self.latest_close - 8))
-                current_sl = trade.get('sl', (self.latest_close - 5) if direction == 'long_profits' else (
-                            self.latest_close + 5))
+                current_tp = trade['tp']
+                current_sl = trade['sl']
+                opening_price = trade['open_price']
 
-                # If this is the first time seeing this trade, initialize its profit history
+                # Initialize profit history if needed
                 if order_id not in self.trade_profit_history:
-                    self.trade_profit_history[order_id] = deque(maxlen=2)  # Store up to 2 last profits
+                    self.trade_profit_history[order_id] = deque(maxlen=2)
 
-                # Get the last two recorded profits (if they exist)
+                # Get last two recorded profits
                 last_two_profits = list(self.trade_profit_history[order_id])
 
-                # Compare current profit with the last two recorded profits (if any)
+                # Check if we should move stop loss to break-even + 0.5
+                if current_profit > 5:
+                    is_long = direction == 'long_profits'
+                    new_sl = opening_price + (0.5 if is_long else -0.5)
+
+                    print(f"Trade {order_id} profit > 5 check:")
+                    print(f"Direction: {direction}, Is Long: {is_long}")
+                    print(f"Current profit: {current_profit}")
+                    print(f"Current SL: {current_sl}")
+                    print(f"Opening price: {opening_price}")
+                    print(f"Calculated new SL: {round(new_sl, 1)}")
+
+                    # Only modify if the new SL is better than current SL
+                    sl_is_better = (is_long and new_sl > current_sl) or (not is_long and new_sl < current_sl)
+                    print(f"SL is better? {sl_is_better}")
+                    print(
+                        f"For {'long' if is_long else 'short'} trade: {new_sl} {'>' if is_long else '<'} {current_sl}")
+
+                    if sl_is_better:
+                        print(f"Moving SL to break-even + 0.5 for trade {order_id}")
+                        print(f"Opening price: {opening_price}, New SL: {round(new_sl, 1)}")
+                        time.sleep(2)
+
+                        # Modified trade command structure
+                        modify_response = self.client.execute({
+                            "command": "tradeTransaction",
+                            "arguments": {
+                                "tradeTransInfo": {
+                                    "cmd": 0,  # Modify trade
+                                    "order": order_id,
+                                    "price": self.latest_close,
+                                    "sl": round(new_sl, 1),
+                                    "tp": current_tp,
+                                    "symbol": self.symbol,
+                                    "type": 3,  # Modification type
+                                    "volume": trade['volume']
+                                }
+                            }
+                        })
+                        print(f"Modified SL to {round(new_sl, 1)}. Response: {modify_response}")
+                        continue
+                    else:
+                        print(
+                            f"Not modifying SL as new SL ({round(new_sl, 1)}) is not better than current SL ({current_sl})")
+                else:
+                    print(f"Trade {order_id} profit ({current_profit}) not > 5, skipping SL modification")
+
+                # Check if profit hasn't increased - rest of the code remains the same
                 if len(last_two_profits) == 2 and current_profit <= max(last_two_profits):
-                    # The profit hasn't increased, so we adjust the TP and SL
                     print(f"Trade {order_id}: Profit hasn't increased compared to the last two records.")
                     print(f"Current TP: {current_tp}, Current SL: {current_sl}")
 
-                    # Offset to avoid overloading the server with too many requests at once
                     time.sleep(2)
 
                     # Adjust take profit and stop loss based on direction
                     if direction == 'long_profits':
-                        # Decrease TP and tighten SL for long trades
-                        new_tp = current_tp - round(0.3 * self.atr_value, 1)
-                        new_sl = current_sl + round(0.1 * self.atr_value, 1)  # Tighten SL by increasing it
+                        new_tp = current_tp - round(0.2 * self.atr_value, 1)
+                        new_sl = current_sl + round(0.05 * self.atr_value, 1)
                         print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
                         print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
-                    elif direction == 'short_profits':
-                        # Increase TP and tighten SL for short trades
-                        new_tp = current_tp + round(0.3 * self.atr_value, 1)
-                        new_sl = current_sl - round(0.1 * self.atr_value, 1)  # Tighten SL by decreasing it
+                    else:  # short_profits
+                        new_tp = current_tp + round(0.2 * self.atr_value, 1)
+                        new_sl = current_sl - round(0.05 * self.atr_value, 1)
                         print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
                         print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
 
@@ -215,12 +285,26 @@ class TradingBot:
                     new_tp = round(new_tp, 1)
                     new_sl = round(new_sl, 1)
 
-                    # Use modify_trade to update both TP and SL
-                    modify_response = modify_trade(self.client, order_id, 0, new_sl, new_tp, 0.01)
+                    # Use the same structure for modifying trades based on profit trend
+                    modify_response = self.client.execute({
+                        "command": "tradeTransaction",
+                        "arguments": {
+                            "tradeTransInfo": {
+                                "cmd": 0,  # Modify trade
+                                "order": order_id,
+                                "price": self.latest_close,
+                                "sl": new_sl,
+                                "tp": new_tp,
+                                "symbol": self.symbol,
+                                "type": 3,  # Modification type
+                                "volume": trade['volume']
+                            }
+                        }
+                    })
                     print(
                         f"Modified trade {order_id}: adjusted TP to {new_tp} and SL to {new_sl}. Response: {modify_response}")
 
-                # Always update the profit history with the current profit
+                # Update profit history
                 self.trade_profit_history[order_id].append(current_profit)
 
     def log_data(self, current_time):
@@ -291,59 +375,83 @@ class TradingBot:
         last_trade_time = datetime.min
         reconnection_attempts = 0
         retry_attempts = 3
+        last_check_minute = None
 
         while True:
             try:
+                current_time = datetime.now()
+                current_minute = current_time.replace(second=0, microsecond=0)
+
+                # Only proceed if we're in a new minute
+                if current_minute == last_check_minute:
+                    remaining_seconds = 60 - current_time.second
+                    print(f"Waiting for next minute... {remaining_seconds} seconds remaining")
+                    time.sleep(min(remaining_seconds, 5))  # Sleep max 5 seconds at a time
+                    continue
+
+                print("-" * 50)
+                print(f"Starting new minute check at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                # Fetch new data
                 self.last_trade_action = 'None'
                 data_ready = self.fetch_and_prepare_data()
                 if not data_ready:
                     print("Data not ready, skipping iteration.")
-                    time.sleep(2)
+                    time.sleep(1)
                     continue
 
-                current_time = datetime.now()
-                print("-" * 50)
-                print(f"Checking conditions at {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                # Print current market conditions
                 print(f"Latest Close: {round(self.latest_close, 2)}")
                 print(f"ATR: {round(self.atr_value, 2)}")
                 print(f"MACD Histogram (1m): {self.macd_histogram_1m}")
+                print(f"MACD Histogram (15m): {round(self.macd_histogram_15m, 3)}")
 
+                # Run all minute-based operations
                 self.manage_positions()
-
-                # Check and adjust TP and SL dynamically based on profit trends
                 self.monitor_and_reduce_tp()
 
-                # Ensure we have 3 histogram values for momentum analysis
+                # Check trading conditions
                 if len(self.macd_histogram_1m) == 3:
-                    h1, h2, h3 = self.macd_histogram_1m  # h1 is the oldest, h3 is the most recent
+                    h1, h2, h3 = self.macd_histogram_1m
 
-                    # No trade condition: if all three histogram values are within ±0.3
                     if all(abs(h) < 0.3 for h in [h1, h2, h3]):
                         print("All histogram values are below the |0.3| threshold. No trade.")
-                        continue
-
-                    # Short Trade: If the histogram is positive but momentum is decreasing or reverting
-                    if h3 > 0 and (h2 - h1) > (h3 - h2):
-                        # Place a short pending order
-                        self.open_position('short', 'pending')
-                        print("Placed short pending order based on decreasing positive MACD momentum.")
-                        last_trade_time = current_time
-
-                    # Long Trade: If the histogram is negative but losing downward momentum or reverting
-                    elif h3 < 0 and (h2 - h1) < (h3 - h2):
-                        # Place a long pending order
-                        self.open_position('long', 'pending')
-                        print("Placed long pending order based on decreasing negative MACD momentum.")
-                        last_trade_time = current_time
-
                     else:
-                        print("No trade signal based on MACD momentum.")
+                        # Check 15m trend strength
+                        is_15m_strongly_bearish = self.macd_histogram_15m < -1.0
+                        is_15m_strongly_bullish = self.macd_histogram_15m > 1.0
+
+                        print(
+                            f"15m MACD status - Strongly bearish: {is_15m_strongly_bearish}, Strongly bullish: {is_15m_strongly_bullish}")
+
+                        # Trading logic
+                        if h3 > 0 and (h2 - h1) > (h3 - h2):
+                            if is_15m_strongly_bullish:
+                                print("Skipping short trade due to strong bullish 15m trend")
+                            else:
+                                self.open_position('short', 'pending')
+                                print("Placed short pending order based on decreasing positive MACD momentum.")
+                                last_trade_time = current_time
+
+                        elif h3 < 0 and (h2 - h1) < (h3 - h2):
+                            if is_15m_strongly_bearish:
+                                print("Skipping long trade due to strong bearish 15m trend")
+                            else:
+                                self.open_position('long', 'pending')
+                                print("Placed long pending order based on decreasing negative MACD momentum.")
+                                last_trade_time = current_time
+                        else:
+                            print("No trade signal based on MACD momentum.")
                 else:
                     print("Not enough histogram data for decision-making.")
 
-                # Slightly increase the sleep time to avoid hitting the rate limit
-                sleep_time = seconds_until_next_minute() + 3  # Increased sleep time by 3 seconds
-                print(f"Sleeping for {sleep_time} seconds.")
+                # Update last check minute
+                last_check_minute = current_minute
+
+                # Calculate sleep time until next minute
+                next_minute = current_minute + timedelta(minutes=1)
+                sleep_time = (next_minute - datetime.now()).total_seconds() + 3
+                print(f"All operations completed. Sleeping for {sleep_time:.2f} seconds until next minute.")
                 time.sleep(sleep_time)
 
             except Exception as e:
