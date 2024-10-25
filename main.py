@@ -73,12 +73,23 @@ class TradingBot:
         self.highs = highs_1m
         self.lows = lows_1m
 
-        # Calculate ATR separately
+        # Calculate ATR
         prices_df = pd.DataFrame(prices_1m, columns=['close'])
         self.atr_value = calculate_atr(highs_1m, lows_1m, prices_df['close']).iloc[-1]
-        print(f"Calculated ATR value: {self.atr_value}")  # Debug print
+        print(f"Calculated ATR value: {self.atr_value}")
 
-        # Add delay before fetching 15-minute data
+        # Add delay before fetching higher timeframe data
+        time.sleep(2)
+
+        # Fetch 5-minute data
+        response_5m = get_last_period_prices(self.client, self.symbol, period=5)
+        if not response_5m or len(response_5m) != 6:
+            print("Failed to fetch 5-minute data.")
+            time.sleep(5)
+            return False
+
+        prices_5m = response_5m[0]
+
         time.sleep(2)
 
         # Fetch 15-minute data
@@ -90,7 +101,7 @@ class TradingBot:
 
         prices_15m = response_15m[0]
 
-        # Calculate MACD for both timeframes
+        # Calculate MACD for all timeframes
         try:
             # 1-minute MACD
             macd_line_1m, signal_line_1m, histogram_1m = calculate_macd(pd.Series(prices_1m))
@@ -98,6 +109,16 @@ class TradingBot:
                 self.macd_histogram_1m = histogram_1m.values[-3:]
             else:
                 print("Warning: 1m MACD calculation returned None")
+                return False
+
+            # 5-minute MACD
+            macd_line_5m, signal_line_5m, histogram_5m = calculate_macd(pd.Series(prices_5m))
+            if histogram_5m is not None:
+                self.macd_histogram_5m = histogram_5m.values[-1]
+                self.macd_5m = macd_line_5m.values[-1]
+                self.signal_5m = signal_line_5m.values[-1]
+            else:
+                print("Warning: 5m MACD calculation returned None")
                 return False
 
             # 15-minute MACD
@@ -112,6 +133,7 @@ class TradingBot:
 
             # Debug prints
             print(f"1m MACD Histogram (last 3): {self.macd_histogram_1m}")
+            print(f"5m MACD Histogram (latest): {self.macd_histogram_5m}")
             print(f"15m MACD Histogram (latest): {self.macd_histogram_15m}")
 
         except Exception as e:
@@ -126,7 +148,6 @@ class TradingBot:
         time.sleep(1)
 
         return True
-
     def open_position(self, position_type, order_type='market', entry_price=None):
         # Check that highs and lows are available
         if self.highs is None or self.lows is None:
@@ -263,7 +284,7 @@ class TradingBot:
                     print(f"Trade {order_id} profit ({current_profit}) not > 5, skipping SL modification")
 
                 # Check if profit hasn't increased - rest of the code remains the same
-                if len(last_two_profits) == 2 and current_profit <= max(last_two_profits):
+                if len(last_two_profits) == 2 and current_profit <= (max(last_two_profits) + 0.5):
                     print(f"Trade {order_id}: Profit hasn't increased compared to the last two records.")
                     print(f"Current TP: {current_tp}, Current SL: {current_sl}")
 
@@ -308,7 +329,7 @@ class TradingBot:
                 self.trade_profit_history[order_id].append(current_profit)
 
     def log_data(self, current_time):
-        vwap = self.vwap if self.vwap is not None else 0
+        # Get profits
         total_long_profit = sum(trade['profit'] for trade in self.positions['long_profits'])
         total_short_profit = sum(trade['profit'] for trade in self.positions['short_profits'])
 
@@ -318,17 +339,22 @@ class TradingBot:
             'High': round(self.highs[-1], 2),
             'Low': round(self.lows[-1], 2),
             'ATR': round(self.atr_value, 2),
-            'VWAP': round(vwap, 2),
-            'SMA': round(self.sma, 2),
-            'RSI': round(self.rsi, 2),
-            'MACD': round(self.macd, 2),
-            'Signal': round(self.signal, 2),
-            'Histogram': round(self.histogram, 2),
-            'MACD 5m': round(self.macd_5m, 2),
-            'Signal 5m': round(self.signal_5m, 2),
-            'Histogram 5m': round(self.histogram_5m, 2),
-            'Supertrend': round(self.supertrend[-1], 2),
-            'Supertrend Direction': self.supertrend_direction[-1],
+
+            # MACD 1m values
+            'MACD 1m Values': str(self.macd_histogram_1m),  # Last 3 values as string
+            'MACD 1m Latest': round(self.macd_histogram_1m[-1], 3) if len(self.macd_histogram_1m) > 0 else 0,
+
+            # MACD 5m values
+            'MACD 5m': round(self.macd_5m, 3),
+            'Signal 5m': round(self.signal_5m, 3),
+            'Histogram 5m': round(self.macd_histogram_5m, 3),
+
+            # MACD 15m values
+            'MACD 15m': round(self.macd_15m, 3),
+            'Signal 15m': round(self.signal_15m, 3),
+            'Histogram 15m': round(self.macd_histogram_15m, 3),
+
+            # Position info
             'Long Positions': self.positions['long_count'],
             'Short Positions': self.positions['short_count'],
             'Total Long Profit': round(total_long_profit, 2),
@@ -336,12 +362,34 @@ class TradingBot:
             'Overall Total Profit': round(total_long_profit + total_short_profit, 2),
             'Trade Executed': self.last_trade_action
         }
+
         new_entry = pd.DataFrame([data])
-        self.data_log = pd.concat([self.data_log, new_entry], ignore_index=True)
-        if len(self.data_log) % 5 == 0:
-            self.data_log.to_csv('C:/Users/Asus/OneDrive/Pulpit/Rozne/Python/XTB/_script/excel/trading_log.csv',
-                                 index=False)
-            print("Data log saved to Excel.")
+
+        log_file_path = 'C:/Users/Asus/OneDrive/Pulpit/Rozne/Python/XTB/_script/excel/trading_log.csv'
+
+        try:
+            # Try to read existing file
+            if os.path.exists(log_file_path):
+                existing_df = pd.read_csv(log_file_path)
+                # Append new data
+                updated_df = pd.concat([existing_df, new_entry], ignore_index=True)
+            else:
+                # If file doesn't exist, use new entry as is
+                updated_df = new_entry
+
+            # Save to CSV, mode='w' is still used but we're saving the concatenated dataframe
+            updated_df.to_csv(log_file_path, index=False)
+            print("Data log appended to CSV.")
+
+        except Exception as e:
+            print(f"Error while saving log data: {e}")
+            # Backup save attempt
+            try:
+                backup_path = log_file_path.replace('.csv', f'_backup_{current_time.strftime("%Y%m%d_%H%M%S")}.csv')
+                new_entry.to_csv(backup_path, index=False)
+                print(f"Backup log saved to {backup_path}")
+            except Exception as backup_error:
+                print(f"Failed to save backup log: {backup_error}")
 
     def manage_positions(self):
         long_profit = sum(trade['profit'] for trade in self.positions['long_profits'])
@@ -386,7 +434,7 @@ class TradingBot:
                 if current_minute == last_check_minute:
                     remaining_seconds = 60 - current_time.second
                     print(f"Waiting for next minute... {remaining_seconds} seconds remaining")
-                    time.sleep(min(remaining_seconds, 5))  # Sleep max 5 seconds at a time
+                    time.sleep(min(remaining_seconds, 5))
                     continue
 
                 print("-" * 50)
@@ -400,6 +448,9 @@ class TradingBot:
                     time.sleep(1)
                     continue
 
+                # Log data for this minute
+                self.log_data(current_time)  # Add this line here
+
                 # Print current market conditions
                 print(f"Latest Close: {round(self.latest_close, 2)}")
                 print(f"ATR: {round(self.atr_value, 2)}")
@@ -412,38 +463,61 @@ class TradingBot:
 
                 # Check trading conditions
                 if len(self.macd_histogram_1m) == 3:
-                    h1, h2, h3 = self.macd_histogram_1m
+                    h1, h2, h3 = self.macd_histogram_1m  # h1 is oldest, h3 is newest
 
-                    if all(abs(h) < 0.3 for h in [h1, h2, h3]):
-                        print("All histogram values are below the |0.3| threshold. No trade.")
+                    if all(abs(h) < 0.6 for h in [h1, h2, h3]):
+                        print("All histogram values are below the |0.6| threshold. No trade.")
                     else:
-                        # Check 15m trend strength
+                        # Check higher timeframe trend strength
                         is_15m_strongly_bearish = self.macd_histogram_15m < -1.0
                         is_15m_strongly_bullish = self.macd_histogram_15m > 1.0
+                        is_5m_strongly_bearish = self.macd_histogram_5m < -0.9
+                        is_5m_strongly_bullish = self.macd_histogram_5m > 0.9
 
                         print(
                             f"15m MACD status - Strongly bearish: {is_15m_strongly_bearish}, Strongly bullish: {is_15m_strongly_bullish}")
+                        print(
+                            f"5m MACD status - Strongly bearish: {is_5m_strongly_bearish}, Strongly bullish: {is_5m_strongly_bullish}")
 
-                        # Trading logic
-                        if h3 > 0 and (h2 - h1) > (h3 - h2):
-                            if is_15m_strongly_bullish:
-                                print("Skipping short trade due to strong bullish 15m trend")
+                        # Short Trade: Only if histogram is positive and its increase is slowing down
+                        if h3 > 0 and h2 > h1 and (h3 - h2) < (h2 - h1):  # Modified condition
+                            if is_15m_strongly_bullish or is_5m_strongly_bullish:
+                                print("Skipping short trade due to strong bullish trend in higher timeframes")
+                                print(f"5m MACD: {self.macd_histogram_5m}, 15m MACD: {self.macd_histogram_15m}")
                             else:
                                 self.open_position('short', 'pending')
-                                print("Placed short pending order based on decreasing positive MACD momentum.")
+                                print("Placed short pending order based on slowing positive MACD momentum.")
                                 last_trade_time = current_time
 
-                        elif h3 < 0 and (h2 - h1) < (h3 - h2):
-                            if is_15m_strongly_bearish:
-                                print("Skipping long trade due to strong bearish 15m trend")
+                        # Long Trade: Only if histogram is negative and its increase is slowing down
+                        elif h3 < 0 and h2 < h1 and (h3 - h2) > (h2 - h1):  # Modified condition
+                            if is_15m_strongly_bearish or is_5m_strongly_bearish:
+                                print("Skipping long trade due to strong bearish trend in higher timeframes")
+                                print(f"5m MACD: {self.macd_histogram_5m}, 15m MACD: {self.macd_histogram_15m}")
                             else:
                                 self.open_position('long', 'pending')
-                                print("Placed long pending order based on decreasing negative MACD momentum.")
+                                print("Placed long pending order based on slowing negative MACD momentum.")
                                 last_trade_time = current_time
+
                         else:
-                            print("No trade signal based on MACD momentum.")
-                else:
-                    print("Not enough histogram data for decision-making.")
+                            print("No trade signal based on MACD momentum: ", end="")
+                            # Add detailed momentum analysis print
+                            if h3 > 0:
+                                if not h2 > h1:
+                                    print("Histogram positive but not in uptrend")
+                                elif not ((h3 - h2) < (h2 - h1)):
+                                    print("Histogram positive but increase not slowing")
+                                else:
+                                    print("Unknown condition")
+                            elif h3 < 0:
+                                if not h2 < h1:
+                                    print("Histogram negative but not in downtrend")
+                                elif not ((h3 - h2) > (h2 - h1)):
+                                    print("Histogram negative but decrease not slowing")
+                                else:
+                                    print("Unknown condition")
+                            else:
+                                print("Histogram at zero")
 
                 # Update last check minute
                 last_check_minute = current_minute
