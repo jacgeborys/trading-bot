@@ -173,20 +173,59 @@ class TradingBot:
     def monitor_and_reduce_tp(self):
         """
         Check if any trades' profits haven't increased over the last two recorded profits
-        and adjust both take profit and stop loss.
+        and adjust take profit. Only moves stop loss to break even after profit threshold 
+        is reached.
         """
-        # Ensure self.positions has the latest data
         if not self.positions:
             print("No position data available.")
             return
 
-        # Loop through both long and short trades
         for direction in ['long_profits', 'short_profits']:
             for trade in self.positions[direction]:
                 order_id = trade['order']
                 current_profit = trade['profit']
-                current_tp = trade.get('tp', (self.latest_close + 8) if direction == 'long_profits' else (self.latest_close - 8))
-                current_sl = trade.get('sl', (self.latest_close - 5) if direction == 'long_profits' else (self.latest_close + 5))  # Fetch current SL
+                current_tp = trade.get('tp')
+                current_sl = trade.get('sl')
+
+                # Break even logic
+                break_even_threshold = 4  # Points needed to move to break even
+                print(f"Checking SL for trade {order_id}: Profit = {current_profit}, Current SL = {current_sl}")
+                
+                if current_profit >= break_even_threshold:
+                    print(f"Trade {order_id} qualifies for break-even (Profit: {current_profit} >= Threshold: {break_even_threshold})")
+                    
+                    if direction == 'long_profits':
+                        buffer = round(0.2 * self.atr_value, 1)
+                        # For a long position that's in profit, opening price must be below current price
+                        opening_price = self.latest_close - (current_profit / 10)  # rough estimation, might need adjustment
+                        new_sl = opening_price + buffer  # Move SL above opening price
+                        print(f"Long trade calculation:")
+                        print(f"Current price: {self.latest_close}")
+                        print(f"Opening price (estimated): {opening_price}")
+                        print(f"Buffer (0.2 * ATR): {buffer}")
+                        print(f"New SL: {new_sl}")
+
+                    should_modify = False
+                    if direction == 'long_profits' and (current_sl is None or new_sl > current_sl):
+                        should_modify = True
+                        print(f"Will modify long SL: New ({new_sl}) > Current ({current_sl})")
+                    elif direction == 'short_profits' and (current_sl is None or new_sl < current_sl):
+                        should_modify = True
+                        print(f"Will modify short SL: New ({new_sl}) < Current ({current_sl})")
+                    
+                    if should_modify:
+                        print(f"Moving SL to break even for trade {order_id}")
+                        print(f"Entry: {new_sl}, Buffer: {buffer}, New SL: {new_sl}, Current profit: {current_profit}")
+                        # Round values to 1 decimal place
+                        new_sl = round(new_sl, 1)
+                        current_tp = round(current_tp, 1)
+                        
+                        modify_response = modify_trade(self.client, order_id, 0, new_sl, current_tp, 0.01)
+                        print(f"Break-even SL modification payload: cmd=0, order={order_id}, sl={new_sl}, tp={current_tp}, price=1.0, volume=0.01")
+                        print(f"Break-even SL modification response: {modify_response}")
+                        time.sleep(1)
+                    else:
+                        print(f"No SL modification needed for trade {order_id}")
 
                 # If this is the first time seeing this trade, initialize its profit history
                 if order_id not in self.trade_profit_history:
@@ -197,35 +236,29 @@ class TradingBot:
 
                 # Compare current profit with the last two recorded profits (if any)
                 if len(last_two_profits) == 2 and current_profit <= max(last_two_profits):
-                    # The profit hasn't increased, so we adjust the TP and SL
+                    # The profit hasn't increased, so we adjust only the TP
                     print(f"Trade {order_id}: Profit hasn't increased compared to the last two records.")
-                    print(f"Current TP: {current_tp}, Current SL: {current_sl}")
+                    print(f"Current TP: {current_tp}")
 
                     # Offset to avoid overloading the server with too many requests at once
                     time.sleep(2)
 
-                    # Adjust take profit and stop loss based on direction
+                    # Adjust only take profit based on direction
                     if direction == 'long_profits':
-                        # Decrease TP and tighten SL for long trades
+                        # Decrease TP for long trades
                         new_tp = current_tp - round(0.1 * self.atr_value, 1)
-                        new_sl = current_sl + round(0.3 * self.atr_value, 1)  # Tighten SL by increasing it from its current value
                         print(f"Decreasing TP for long trade {order_id}. New TP: {new_tp}")
-                        print(f"Tightening SL for long trade {order_id}. New SL: {new_sl}")
                     elif direction == 'short_profits':
-                        # Increase TP and tighten SL for short trades
+                        # Increase TP for short trades
                         new_tp = current_tp + round(0.1 * self.atr_value, 1)
-                        new_sl = current_sl - round(0.3 * self.atr_value, 1)  # Tighten SL by decreasing it from its current value
                         print(f"Increasing TP for short trade {order_id}. New TP: {new_tp}")
-                        print(f"Tightening SL for short trade {order_id}. New SL: {new_sl}")
 
                     # Ensure values are rounded properly
                     new_tp = round(new_tp, 1)  # Round TP to one decimal place
-                    new_sl = round(new_sl, 1)  # Round SL to one decimal place
 
-                    # Use modify_trade to update both TP and SL
-                    modify_response = modify_trade(self.client, order_id, 0, new_sl, new_tp, 0.01)
-                    print(
-                        f"Modified trade {order_id}: adjusted TP to {new_tp} and SL to {new_sl}. Response: {modify_response}")
+                    # Use modify_trade to update only TP, keeping existing SL
+                    modify_response = modify_trade(self.client, order_id, 0, current_sl, new_tp, 0.01)
+                    print(f"Modified trade {order_id}: adjusted TP to {new_tp}. Response: {modify_response}")
 
                 # Always update the profit history with the current profit
                 self.trade_profit_history[order_id].append(current_profit)

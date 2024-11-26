@@ -7,7 +7,7 @@ import ssl
 from threading import Thread
 
 # set to true on debug environment only
-DEBUG = True
+DEBUG = False
 
 #default connection properites
 DEFAULT_XAPI_ADDRESS        = 'xapi.xtb.com'
