@@ -59,7 +59,8 @@ def get_current_positions(client):
             'profit': trade["profit"],
             'volume': trade["volume"],
             'tp': trade["tp"],
-            'sl': trade["sl"]
+            'sl': trade["sl"],
+            'open_price': trade["open_price"]
         }
         if trade["cmd"] == 0:  # 0 for long position
             positions['long'] = True
@@ -69,9 +70,6 @@ def get_current_positions(client):
             positions['short'] = True
             positions['short_count'] += 1
             positions['short_profits'].append(trade_info)
-
-        positions['tp'] = 'tp'
-        positions['sl'] = 'sl'
 
     return positions
 

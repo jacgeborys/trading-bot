@@ -6,6 +6,7 @@ import pandas as pd
 import math
 import csv
 import datetime
+import json
 
 def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0, sl_value=0.0, order_type='market'):
     """
@@ -77,25 +78,23 @@ def open_trade(client, symbol, volume, price, latest_close, offset, tp_value=0.0
 
 def modify_trade(client, order_id, offset, sl_value, tp_value, volume):
     """
-    Modify an existing trade with specified parameters.
-
-    :param client: Trading client.
-    :param order_id: The ID of the trade to modify.
-    :param offset: New trailing offset.
-    :param sl_value: New stop loss value.
-    :param tp_value: New take profit value.
-    :param volume: Trade volume.
+    Modify an existing trade's SL/TP values.
     """
+    # Round SL and TP to 1 decimal place
+    sl_value = round(float(sl_value), 1) if sl_value is not None else 0
+    tp_value = round(float(tp_value), 1) if tp_value is not None else 0
+    
     trade_info = {
-        "cmd": 0,  # Modify command
+        "cmd": 0,  # Changed from 3 to 0
+        "customComment": "SL/TP modification",
+        "expiration": 0,
         "order": order_id,
-        "offset": offset,
+        "price": 1.0,
         "sl": sl_value,
         "tp": tp_value,
-        "price": 1.0,  # Static price
         "symbol": "US500",
-        "type": 3,  # Modify type
-        "volume": volume  # Add volume
+        "type": 3,  # This stays as 3 for modifications
+        "volume": volume
     }
 
     request = {
@@ -104,6 +103,9 @@ def modify_trade(client, order_id, offset, sl_value, tp_value, volume):
             "tradeTransInfo": trade_info
         }
     }
+
+    print("Modify trade payload:")
+    print(json.dumps(request, indent=4))
 
     response = client.execute(request)
     return response

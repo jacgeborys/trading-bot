@@ -8,6 +8,7 @@ import numpy as np
 from collections import deque
 from datetime import datetime, timedelta
 from collections import deque
+import json
 
 from fetch_data import get_last_period_prices, get_current_positions, seconds_until_next_minute
 from file_ops import write_to_csv
@@ -60,7 +61,7 @@ class TradingBot:
 
         self.trade_profit_timestamps = {}  # Track profit timestamps for each trade
 
-    def fetch_and_prepare_data(self):
+    def fetch_and_prepare_data(self, print_positions=False):
         # Fetch 1-minute data
         response_1m = get_last_period_prices(self.client, self.symbol, period=1)
         if not response_1m or len(response_1m) != 6:
@@ -107,12 +108,12 @@ class TradingBot:
         self.rsi = rsi
         self.positions = get_current_positions(self.client)
 
-        # Log positions
-        print("Current Positions:")
-        print(f"Long positions: {self.positions['long_count']}")
-        print(f"Short positions: {self.positions['short_count']}")
-        print(f"Long profits: {self.positions['long_profits']}")
-        print(f"Short profits: {self.positions['short_profits']}")
+        if print_positions:
+            print("Current Positions:")
+            print(f"Long positions: {self.positions['long_count']}")
+            print(f"Short positions: {self.positions['short_count']}")
+            print(f"Long profits: {self.positions['long_profits']}")
+            print(f"Short profits: {self.positions['short_profits']}")
 
         return True  # Indicate success
 
@@ -171,11 +172,6 @@ class TradingBot:
     from collections import deque
 
     def monitor_and_reduce_tp(self):
-        """
-        Check if any trades' profits haven't increased over the last two recorded profits
-        and adjust take profit. Only moves stop loss to break even after profit threshold 
-        is reached.
-        """
         if not self.positions:
             print("No position data available.")
             return
@@ -187,45 +183,50 @@ class TradingBot:
                 current_tp = trade.get('tp')
                 current_sl = trade.get('sl')
 
+                # Check if SL has already been adjusted
+                if 'sl_adjusted' in trade and trade['sl_adjusted']:
+                    continue
+
                 # Break even logic
-                break_even_threshold = 4  # Points needed to move to break even
+                break_even_threshold = 4
                 print(f"Checking SL for trade {order_id}: Profit = {current_profit}, Current SL = {current_sl}")
                 
                 if current_profit >= break_even_threshold:
                     print(f"Trade {order_id} qualifies for break-even (Profit: {current_profit} >= Threshold: {break_even_threshold})")
                     
-                    if direction == 'long_profits':
-                        buffer = round(0.2 * self.atr_value, 1)
-                        # For a long position that's in profit, opening price must be below current price
-                        opening_price = self.latest_close - (current_profit / 10)  # rough estimation, might need adjustment
-                        new_sl = opening_price + buffer  # Move SL above opening price
-                        print(f"Long trade calculation:")
-                        print(f"Current price: {self.latest_close}")
-                        print(f"Opening price (estimated): {opening_price}")
-                        print(f"Buffer (0.2 * ATR): {buffer}")
-                        print(f"New SL: {new_sl}")
-
-                    should_modify = False
-                    if direction == 'long_profits' and (current_sl is None or new_sl > current_sl):
-                        should_modify = True
-                        print(f"Will modify long SL: New ({new_sl}) > Current ({current_sl})")
-                    elif direction == 'short_profits' and (current_sl is None or new_sl < current_sl):
-                        should_modify = True
-                        print(f"Will modify short SL: New ({new_sl}) < Current ({current_sl})")
+                    buffer = round(0.2 * self.atr_value, 1)
                     
-                    if should_modify:
-                        print(f"Moving SL to break even for trade {order_id}")
-                        print(f"Entry: {new_sl}, Buffer: {buffer}, New SL: {new_sl}, Current profit: {current_profit}")
-                        # Round values to 1 decimal place
-                        new_sl = round(new_sl, 1)
-                        current_tp = round(current_tp, 1)
-                        
-                        modify_response = modify_trade(self.client, order_id, 0, new_sl, current_tp, 0.01)
-                        print(f"Break-even SL modification payload: cmd=0, order={order_id}, sl={new_sl}, tp={current_tp}, price=1.0, volume=0.01")
-                        print(f"Break-even SL modification response: {modify_response}")
-                        time.sleep(1)
-                    else:
-                        print(f"No SL modification needed for trade {order_id}")
+                    opening_price = trade['open_price']
+                    
+                    if direction == 'long_profits':
+                        new_sl = opening_price + buffer
+                        print(f"Long trade calculation:")
+                    else:  # short_profits
+                        new_sl = opening_price - buffer
+                        print(f"Short trade calculation:")
+                    
+                    print(f"Current price: {self.latest_close}")
+                    print(f"Actual opening price: {opening_price}")
+                    print(f"Buffer (0.5 * ATR): {buffer}")
+                    print(f"New SL: {new_sl}")
+                    
+                    # Round values to 1 decimal place
+                    new_sl = round(new_sl, 1)
+                    current_tp = round(current_tp, 1) if current_tp else 0.0
+                    
+                    modify_response = modify_trade(
+                        self.client, 
+                        order_id, 
+                        0,  # offset
+                        new_sl, 
+                        current_tp, 
+                        trade['volume']
+                    )
+                    print(f"Break-even SL modification response: {modify_response}")
+                    
+                    # Mark SL as adjusted
+                    trade['sl_adjusted'] = True
+                    time.sleep(1)
 
                 # If this is the first time seeing this trade, initialize its profit history
                 if order_id not in self.trade_profit_history:
@@ -335,7 +336,7 @@ class TradingBot:
         while True:
             try:
                 self.last_trade_action = 'None'
-                data_ready = self.fetch_and_prepare_data()
+                data_ready = self.fetch_and_prepare_data(print_positions=True)
                 if not data_ready:
                     print("Data not ready, skipping iteration.")
                     time.sleep(2)

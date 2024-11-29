@@ -67,10 +67,17 @@ class JsonSocket(object):
     def connect(self):
         for i in range(API_MAX_CONN_TRIES):
             try:
-                self.socket.connect( (self.address, self.port) )
+                # Add check if socket is already connected
+                try:
+                    self.socket.getpeername()
+                    logger.info("Socket is already connected")
+                    return True
+                except socket.error:
+                    # Socket is not connected, proceed with connection
+                    self.socket.connect((self.address, self.port))
             except socket.error as msg:
                 logger.error("SockThread Error: %s" % msg)
-                time.sleep(0.25);
+                time.sleep(0.25)
                 continue
             logger.info("Socket connected")
             return True
